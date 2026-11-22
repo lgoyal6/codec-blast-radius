@@ -265,6 +265,7 @@ class Semantics:
         self.class_namespace_users = profile.get("class_namespace_users", {})
         self.unread_docs = frozenset(profile.get("unread_docs", ()))
         self.module_literals = profile.get("module_literals", {})
+        self.escape_tables = profile.get("escape_tables")
         self.unreached_calls = {path: frozenset(spans) for path, spans in profile.get("unreached_calls", {}).items()}
         self.token_dispatch_functions = frozenset(profile.get("token_dispatch_functions", ()))
         self.registry = profile["registry"]
@@ -298,6 +299,28 @@ class Semantics:
         self.default_functions = defaults.get("functions", {})
         self.factory_defaults = defaults.get("factory_defaults", {})
         self.factory_readers = int(defaults.get("factory_readers", "0"), 16)
+
+    def escape_table_users(self, changes):
+        profile = self.escape_tables
+        users = int(profile["whole"][0], 16)
+        if profile["whole"][1]:
+            return None
+
+        for key, values in changes.items():
+            entries = [profile["unescaped"].get(key)]
+            for value in values:
+                if value == "\\" or (not value.isprintable() and key[1:] != value):
+                    entries.append(profile["escaped"].get(value))
+                if value in profile["delimiters"]:
+                    return None
+            for entry in entries:
+                if entry is None:
+                    continue
+                mask, collection = entry
+                if collection:
+                    return None
+                users |= int(mask, 16)
+        return users
 
     def factory_default_users(self, path, name, changed, executed):
         evidence = self.factory_defaults.get(f"{path}:{name}")

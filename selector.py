@@ -14,7 +14,8 @@ from pathlib import Path
 from fixture_pairs import fixture_pair_users
 from patches import parse_patch, split_lines
 from semantic_edits import (
-    default_edit, inserted_branch_exit, module_literal_edit, only_preloaded_imports, unreached_call_edit,
+    default_edit, escape_table_changes, inserted_branch_exit, module_literal_edit,
+    only_preloaded_imports, unreached_call_edit,
 )
 from semantics import Semantics
 
@@ -719,6 +720,14 @@ class Selector:
                 if lazy is not None and only_preloaded_imports(old, new, removed, added, stable):
                     return int(lazy, 16), "observed-lazy-import"
             return self.baseline.all, "import-change"
+
+        escape_tables = getattr(self.semantics, "escape_tables", None)
+        if single_file and escape_tables and path == "sqlglot/dialects/dialect.py":
+            changes = escape_table_changes(old, new, removed, added)
+            if changes:
+                observed = self.semantics.escape_table_users(changes)
+                if observed is not None:
+                    return observed | file.readers, "observed-escape-table"
 
         constants = getattr(self.semantics, "module_literals", {}).get(path)
         if single_file and constants and old_lines:

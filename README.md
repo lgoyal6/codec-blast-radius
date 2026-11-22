@@ -217,3 +217,12 @@ The optional documentation profile records tracked Markdown files with no file a
 The optional module binding profile associates literal top-level constants with their observed readers. It combines direct names from pinned source with external attribute reads during the full test catalog. It retains the broad fallback for re-exported names, uncertain module namespace access, or binding consumption during collection. The selector requires one existing literal assignment, the same value type, and unchanged surrounding syntax.
 
 Generate module targets with `trace/build_module_bindings.py SOURCE BASELINE TARGETS`. Capture the catalog and separate parser stress test with `profile_module_bindings.start` in pytest and its workers, passing `BLAST_MODULE_TARGETS=TARGETS`. Merge the reports using the same compiler with `--profile PROFILE --reports REPORTS...`.
+
+For the pinned dialect initializer, changing only single-character values in the existing
+global escape dictionary can use observed map lookups. Tokenizer lookups see only the
+changed original keys. Generator lookups can see only each old or new value that the
+initializer reverses into a key. The profile also retains whole-map consumers, direct
+readers, and namespace or source inspection. Collection-time observations, identifier
+delimiter changes, and edits that change keys or surrounding code use the broader
+fallback. Rebuild the masks with `trace/build_escape_tables.py` using the complete
+baseline capture from `profile_escape_reads.start` and the module namespace capture.

@@ -462,7 +462,7 @@ def module_literal(node):
     return target.id, type(value)
 
 
-def module_literal_edit(old, new, old_lines, added, candidates):
+def module_literal_changes(old, new, old_lines, added, candidates):
     matches = [
         (node, item)
         for node in old.tree.body
@@ -481,6 +481,33 @@ def module_literal_edit(old, new, old_lines, added, candidates):
     updated_value = after.value
     try:
         after.value = before.value
-        return binding[0] if ast.dump(old.tree) == ast.dump(new.tree) else None
+        if ast.dump(old.tree) == ast.dump(new.tree):
+            return binding[0], before.value, updated_value
     finally:
         after.value = updated_value
+
+
+def module_literal_edit(old, new, old_lines, added, candidates):
+    change = module_literal_changes(old, new, old_lines, added, candidates)
+    return change[0] if change else None
+
+
+def escape_table_changes(old, new, removed, added):
+    if not removed or removed != added:
+        return None
+    change = module_literal_changes(old, new, removed, added, {"UNESCAPED_SEQUENCES"})
+    if not change:
+        return None
+    _, before, after = change
+    if not all(isinstance(table, ast.Dict) for table in (before, after)):
+        return None
+    prior, updated = map(ast.literal_eval, (before, after))
+    if (
+        len(prior) != len(before.keys) or len(updated) != len(after.keys)
+        or list(prior) != list(updated)
+        or any(type(key) is not str or len(key) != 2 or key[0] != "\\" for key in prior)
+        or any(type(value) is not str or len(value) != 1 or not value.isascii()
+               for value in (*prior.values(), *updated.values()))
+    ):
+        return None
+    return {key: (value, updated[key]) for key, value in prior.items() if value != updated[key]}

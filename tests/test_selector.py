@@ -276,6 +276,36 @@ class SemanticEvidenceTest(unittest.TestCase):
             selector = Selector(baseline, root, semantics=semantics)
             self.assertEqual(selector.select(patch_for(path, before, after)), (6, {"observed-fresh-copy"}))
 
+    def test_escape_table_scope_keeps_whole_and_key_readers(self):
+        from semantic_edits import escape_table_changes
+
+        path = "sqlglot/dialects/dialect.py"
+        old = SourceShape(rb'UNESCAPED_SEQUENCES = {"\\n": "\n", "\\t": "\t"}', path)
+        new = SourceShape(rb'UNESCAPED_SEQUENCES = {"\\n": "\r", "\\t": "\t"}', path)
+        changes = escape_table_changes(old, new, {1}, {1})
+        self.assertEqual(changes, {"\\n": ("\n", "\r")})
+
+        semantics = Semantics.__new__(Semantics)
+        semantics.escape_tables = {
+            "whole": ["1", False],
+            "unescaped": {"\\n": ["2", False], "\\t": ["8", False]},
+            "escaped": {"\n": ["4", False], "\r": ["10", False]},
+            "delimiters": ["\\"],
+        }
+        self.assertEqual(semantics.escape_table_users(changes), 23)
+        semantics.escape_tables["escaped"]["\r"][1] = True
+        self.assertIsNone(semantics.escape_table_users(changes))
+        self.assertIsNone(semantics.escape_table_users({"\\n": ("\n", "\\")}))
+
+        for source in (
+            rb'UNESCAPED_SEQUENCES = {"\\t": "\t", "\\n": "\r"}',
+            rb'UNESCAPED_SEQUENCES = {"\\n": "\r"}',
+            rb'UNESCAPED_SEQUENCES = {"\\n": ["\r"], "\\t": "\t"}',
+            rb'UNESCAPED_SEQUENCES = {"\\n": "\r", "\\t": "\t"}; X = 1',
+        ):
+            with self.subTest(source=source):
+                self.assertIsNone(escape_table_changes(old, SourceShape(source, path), {1}, {1}))
+
     def test_default_edit_identifies_bound_parameters(self):
         old = SimpleNamespace(tree=ast.parse("def f(a, /, b=2, *, c=3):\n    return b + c\n"))
         new = SimpleNamespace(tree=ast.parse("def f(a, /, b=4, *, c=3):\n    return b + c\n"))
