@@ -181,6 +181,7 @@ class Semantics:
         self.registry = profile["registry"]
         self.direct = profile["direct"]
         self.schemas = profile["schemas"]
+        self.schema_validations = profile.get("schema_validations", {})
         self.lookups = profile["lookups"]
 
     def equivalent(self, path, lines, old, new, removed, added):
@@ -229,6 +230,21 @@ class Semantics:
                 return None
             result |= int(mask, 16) | int(self.direct.get(attribute, "0"), 16)
         return result
+
+    def schema_flag_users(self, path, owner, keys):
+        module = path.removesuffix(".py").replace("/", ".")
+        evidence = self.schema_validations.get(f"{module}:{owner}")
+        if evidence is None:
+            return None
+        collection, uncertain, missing = evidence
+        if keys.intersection(collection):
+            return None
+        hits = int(uncertain, 16)
+        for field in ("arg_types", "required_args"):
+            hits |= int(self.direct.get(field, "0"), 16)
+        for key in keys:
+            hits |= int(missing.get(key, "0"), 16)
+        return hits
 
     def schema_users(self, path, owner):
         module = path.removesuffix(".py").replace("/", ".")

@@ -11,6 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from selector import Baseline, REVISION, union
+from build_schema import build_schema
 
 COLLECTION = "@collection"
 
@@ -95,6 +96,7 @@ def expression_schemas(source, baseline, reads, initialization, mask):
             }
             classes[f"{module}:{node.name}"] = bases
     result = {}
+    stable_derivation = set()
     derivation = schema_derivation_sites(source)
     for owner in classes:
         field = owner + ":arg_types"
@@ -107,11 +109,10 @@ def expression_schemas(source, baseline, reads, initialization, mask):
             related.update(children)
             pending.difference_update(children)
             names.update(item.rsplit(":", 1)[1] for item in children)
-        if any(
-            COLLECTION in reads.get(item + ":required_args", ())
-            or not initialization.get(item, set()) <= derivation
-            for item in related
-        ):
+        if any(not initialization.get(item, set()) <= derivation for item in related):
+            continue
+        stable_derivation.add(owner)
+        if any(COLLECTION in reads.get(item + ":required_args", ()) for item in related):
             continue
         result[owner] = format(
             union(baseline.references.get(name, 0) for name in names)
@@ -122,10 +123,10 @@ def expression_schemas(source, baseline, reads, initialization, mask):
             ),
             "x",
         )
-    return result
+    return result, stable_derivation
 
 
-def build(source, coverage, reports, output):
+def build(source, coverage, reports, output, schema_reports=()):
     revision = subprocess.check_output(
         ["git", "-C", source, "rev-parse", "HEAD"], text=True
     ).strip()
@@ -157,6 +158,7 @@ def build(source, coverage, reports, output):
             [(format(bit, "x"), facts) for facts, bit in sorted(groups.items())],
         )
 
+    schemas, stable_derivation = expression_schemas(source, baseline, reads, initialization, mask)
     profile = {
         "revision": REVISION,
         "ids": list(baseline.indices),
@@ -182,7 +184,8 @@ def build(source, coverage, reports, output):
             }
             for owner, entries in sorted(mapping.items())
         },
-        "schemas": expression_schemas(source, baseline, reads, initialization, mask),
+        "schemas": schemas,
+        "schema_validations": build_schema(source, schema_reports, stable_derivation, baseline),
     }
     with (
         output.open("wb") as target,
@@ -197,8 +200,9 @@ def main():
     parser.add_argument("coverage", type=Path)
     parser.add_argument("output", type=Path)
     parser.add_argument("reports", nargs="+", type=Path)
+    parser.add_argument("--schema-reports", nargs="+", type=Path, default=())
     args = parser.parse_args()
-    build(args.source, args.coverage, args.reports, args.output)
+    build(args.source, args.coverage, args.reports, args.output, args.schema_reports)
 
 
 if __name__ == "__main__":

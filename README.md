@@ -33,6 +33,8 @@ Run the local regression checks with `python3 -m unittest discover -s tests`.
 
 `baseline.json.gz` uses the public test catalog for node identities and traces from the pinned, unmodified SQLGlot revision. It contains coverage, import dependents, file readers, and runtime class ownership. The generator accepts test identities and baseline traces.
 
+The source reader trace recognizes pytest's own assertion-rewrite reads during collection. Test ownership and import coverage account for loading those modules. Direct application and test reads still contribute to the reader mask. Use `--reader-trace /readers` with a newer capture when rebuilding the map from older coverage data.
+
 The map can be rebuilt on Python 3.13 with the starter’s `requirements.lock`, Coverage.py 7.17.4, and the pinned SQLGlot repository at `/src`. Set `PYTHONPATH=/src`, `SKIP_INTEGRATION=0`, and `PYTHON_CPU_COUNT=3`. Run the capture command from `/src` and the map compiler from the entry tree. Use separate directories for the coverage and class-usage passes to keep peak memory down.
 
 ```sh
@@ -64,3 +66,18 @@ From the entry repository, combine the successful reports. The parser stress tes
 ```sh
 python3 trace/build_semantics.py /src baseline.json.gz semantics.json.gz /profile/*.json
 ```
+
+
+### Expression argument validation
+
+The optional schema trace runs the pinned validator and records which inputs would fail a required-argument check. It preserves any test that reached an uncertain validator state. Changes that could affect collection fall back to the existing dependency selection.
+
+Use separate output directories for the two capture modes. From the pinned checkout, run the schema capture with the same environment as the semantic profile.
+
+```sh
+BLAST_SCHEMA=1 BLAST_PROFILE=/schema/main.json python -c 'import profile_schema; raise SystemExit(profile_schema.main())' /schema/main.json
+BLAST_SCHEMA=1 BLAST_PROFILE=/schema/stress.json python -c 'import profile_schema; raise SystemExit(profile_schema.main())' /schema/stress.json \
+  tests/test_parser.py::TestParser::test_max_nodes
+```
+
+Add `--schema-reports /schema/*.json` to the semantic profile compiler command.

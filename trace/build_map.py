@@ -167,7 +167,7 @@ def loaded_names(trees, lines):
     return {name: mask for name, mask in references.items() if mask}
 
 
-def build(source, trace, catalog, output, usage_trace=None):
+def build(source, trace, catalog, output, usage_trace=None, reader_trace=None):
     revision = subprocess.check_output(["git", "-C", source, "rev-parse", "HEAD"], text=True).strip()
     if revision != REVISION:
         raise ValueError(f"expected baseline {REVISION}, got {revision}")
@@ -188,6 +188,11 @@ def build(source, trace, catalog, output, usage_trace=None):
     imports = import_dependents(trees, test_files)
     lines, collection = coverage_lines(trace, bits)
     readers, owners = trace_events(trace, bits, usage_trace)
+    if reader_trace is not None:
+        source_readers, _ = trace_events(reader_trace, bits)
+        for path in trees:
+            if path.startswith("tests/") and path.endswith(".py"):
+                readers[path] = source_readers[path]
     references = loaded_names(trees, lines)
 
     masks = {0: 0}
@@ -223,8 +228,9 @@ def main():
     for name in ("source", "trace", "catalog", "output"):
         parser.add_argument(name, type=Path)
     parser.add_argument("--usage-trace", type=Path)
+    parser.add_argument("--reader-trace", type=Path)
     args = parser.parse_args()
-    build(args.source, args.trace, args.catalog, args.output, args.usage_trace)
+    build(args.source, args.trace, args.catalog, args.output, args.usage_trace, args.reader_trace)
 
 
 if __name__ == "__main__":

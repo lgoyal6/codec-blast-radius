@@ -271,7 +271,7 @@ class Selector:
         )
         return owners | peers | direct_references | file.imports | file.executed | file.readers
 
-    def observed_class_candidates(self, path, file, old, new, removed, added):
+    def observed_class_candidates(self, path, file, old, new, removed, added, single_file):
         members = class_updates(old, new, removed, added)
         if not members:
             return None
@@ -286,6 +286,13 @@ class Selector:
                 and all(isinstance(key, ast.Constant) and type(key.value) is str for key in value.keys)
                 and all(isinstance(item, ast.Constant) and type(item.value) is bool for item in value.values)
             ):
+                if single_file:
+                    before = ast.literal_eval(value)
+                    after = ast.literal_eval(new.assignments[(owner, name)].value)
+                    changed = {key for key in before if before[key] != after[key]}
+                    validators = self.semantics.schema_flag_users(path, owner, changed)
+                    if validators is not None:
+                        return validators | file.readers | (file.executed & unknown)
                 schema = self.semantics.schema_users(path, owner)
                 if schema is not None:
                     return schema | file.readers | (file.executed & unknown)
@@ -311,7 +318,7 @@ class Selector:
             return observed | file.readers | (unknown & (owners | file.executed))
         return None
 
-    def select_file(self, change):
+    def select_file(self, change, single_file=True):
         path = change.path
         file = self.baseline.files.get(path)
         if file is None:
@@ -383,7 +390,7 @@ class Selector:
                     if called:
                         references = self.baseline.references.get(name, 0)
                         return called | references | file.readers, "observed-default"
-            observed = self.observed_class_candidates(path, file, old, new, removed, added)
+            observed = self.observed_class_candidates(path, file, old, new, removed, added, single_file)
             if observed is not None:
                 return observed, "observed-class"
             registry = self.semantics.registry_users(self, path, old, new, removed, added)
@@ -399,8 +406,9 @@ class Selector:
         selected = 0
         reasons = set()
         try:
-            for change in parse_patch(patch):
-                candidates, reason = self.select_file(change)
+            changes = parse_patch(patch)
+            for change in changes:
+                candidates, reason = self.select_file(change, len(changes) == 1)
                 selected |= candidates
                 reasons.add(reason)
                 if selected == self.baseline.all:

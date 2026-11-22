@@ -89,9 +89,28 @@ class Capture:
         path = os.path.abspath(filename)
         if not path.startswith(self.source):
             return
-        if path.endswith(".py") and "importlib" in sys._getframe(1).f_code.co_filename:
+        origin = sys._getframe(1)
+        if path.endswith(".py") and "importlib" in origin.f_code.co_filename:
             return
-        self.files[path.removeprefix(self.source)].add(self.context)
+        relative = path.removeprefix(self.source)
+        if self.context == COLLECTION and relative.startswith("tests/") and relative.endswith(".py"):
+            reader = origin.f_back
+            if (
+                origin.f_globals.get("__name__") == "pathlib._local"
+                and origin.f_code.co_name == "open"
+                and reader is not None
+                and reader.f_globals.get("__name__") == "pathlib._abc"
+                and reader.f_code.co_name == "read_bytes"
+            ):
+                rewrite = reader.f_back
+                if (
+                    rewrite is not None
+                    and rewrite.f_globals.get("__name__") == "_pytest.assertion.rewrite"
+                    and rewrite.f_code.co_name == "_rewrite_test"
+                    and os.fspath(rewrite.f_locals.get("fn", "")) == path
+                ):
+                    return
+        self.files[relative].add(self.context)
 
     def finish(self):
         if self.cov is not None:
