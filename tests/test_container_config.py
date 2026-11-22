@@ -10,7 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "trace"))
 from build_container_config import observe
 from build_reflection import compile_masks
 from selector import Selector, configuration_keys, parser_dispatch_keys, token_dispatch_keys
-from semantic_edits import unreached_call_edit
+from semantic_edits import module_literal_edit, unreached_call_edit
 
 
 class ContainerConfigTest(unittest.TestCase):
@@ -138,3 +138,20 @@ class ContainerConfigTest(unittest.TestCase):
             self.assertEqual(selector.select(patch), (0, {"unread-documentation"}))
             self.assertEqual(selector.select(patch.replace(b"-before", b"-other")), (7, {"unsupported-patch"}))
             self.assertEqual(whole.select(patch), (7, {"unmapped-file"}))
+
+
+    def test_module_literal_rule_requires_a_single_binding_with_the_same_type(self):
+        def parse(source):
+            return SimpleNamespace(tree=ast.parse(source))
+
+        before = parse("LIMIT = 100\nMORE = True\n")
+        fenced = {"LIMIT": "10"}
+        self.assertEqual(module_literal_edit(before, parse("LIMIT = 99\nMORE = True\n"), {1}, {1}, fenced), "LIMIT")
+        for changed in (
+            "LIMIT = '99'\nMORE = True\n",
+            "LIMIT = fallback()\nMORE = True\n",
+            "LIMIT = 99\nMORE = False\n",
+            "OTHER = 99\nMORE = True\n",
+        ):
+            with self.subTest(changed=changed):
+                self.assertIsNone(module_literal_edit(before, parse(changed), {1}, {1}, fenced))

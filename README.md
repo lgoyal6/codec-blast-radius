@@ -213,3 +213,7 @@ Run `trace/build_call_reach.py SOURCE BASELINE TARGETS` to generate candidate so
 
 
 The optional documentation profile records tracked Markdown files with no file access beyond pytest discovery's file-type checks. Run `strace -f -s 4096 -y -e trace=%file` around the baseline pytest catalog, the separate parser stress test, and collection alone. During the collection trace, record the Python callers of `os.stat` for tracked Markdown basenames in `collect-stats.json`. Provide all three trace and log pairs to `trace/build_unread_docs.py`. The selector uses the profile for a single existing Markdown file after checking the complete patch against the pinned contents.
+
+The optional module binding profile associates literal top-level constants with their observed readers. It combines direct names from pinned source with external attribute reads during the full test catalog. It retains the broad fallback for re-exported names, uncertain module namespace access, or binding consumption during collection. The selector requires one existing literal assignment, the same value type, and unchanged surrounding syntax.
+
+Generate module targets with `trace/build_module_bindings.py SOURCE BASELINE TARGETS`. Capture the catalog and separate parser stress test with `profile_module_bindings.start` in pytest and its workers, passing `BLAST_MODULE_TARGETS=TARGETS`. Merge the reports using the same compiler with `--profile PROFILE --reports REPORTS...`.

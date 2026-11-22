@@ -443,3 +443,44 @@ def unreached_call_edit(old, new, removed, added, sites):
         finally:
             after.args, after.keywords = args, keywords
     return False
+
+def module_literal(node):
+    if isinstance(node, ast.Assign) and len(node.targets) == 1:
+        target, = node.targets
+    elif isinstance(node, ast.AnnAssign):
+        target = node.target
+    else:
+        return None
+    if not isinstance(target, ast.Name) or not target.id.isupper():
+        return None
+    try:
+        value = ast.literal_eval(node.value)
+    except (TypeError, ValueError, SyntaxError, OverflowError):
+        return None
+    if type(value) not in (*LITERAL_VALUES, tuple, list, dict, set):
+        return None
+    return target.id, type(value)
+
+
+def module_literal_edit(old, new, old_lines, added, candidates):
+    matches = [
+        (node, item)
+        for node in old.tree.body
+        if (item := module_literal(node)) is not None and item[0] in candidates
+        and old_lines.issubset(range(node.value.lineno, node.value.end_lineno + 1))
+    ]
+    if len(matches) != 1:
+        return None
+    (before, binding), = matches
+    updates = [node for node in new.tree.body if module_literal(node) == binding]
+    if len(updates) != 1:
+        return None
+    after, = updates
+    if not added.issubset(range(after.value.lineno, after.value.end_lineno + 1)):
+        return None
+    updated_value = after.value
+    try:
+        after.value = before.value
+        return binding[0] if ast.dump(old.tree) == ast.dump(new.tree) else None
+    finally:
+        after.value = updated_value

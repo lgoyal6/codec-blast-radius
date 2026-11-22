@@ -14,7 +14,7 @@ from pathlib import Path
 from fixture_pairs import fixture_pair_users
 from patches import parse_patch, split_lines
 from semantic_edits import (
-    default_edit, inserted_branch_exit, only_preloaded_imports, unreached_call_edit,
+    default_edit, inserted_branch_exit, module_literal_edit, only_preloaded_imports, unreached_call_edit,
 )
 from semantics import Semantics
 
@@ -719,6 +719,12 @@ class Selector:
                 if lazy is not None and only_preloaded_imports(old, new, removed, added, stable):
                     return int(lazy, 16), "observed-lazy-import"
             return self.baseline.all, "import-change"
+
+        constants = getattr(self.semantics, "module_literals", {}).get(path)
+        if single_file and constants and old_lines:
+            name = module_literal_edit(old, new, old_lines, added, constants)
+            if name is not None:
+                return int(constants[name], 16) | file.readers, "observed-module-binding"
 
         old_scopes = old.scopes_at(old_lines)
         new_scopes = new.scopes_at(added) if added else old_scopes
