@@ -177,3 +177,7 @@ Expression schema edits that add or remove optional keys can use existing schema
 For read-only configuration fields, the selector can match a changed string key to its baseline lookup and membership observations. It keeps whole-container readers and tests with unresolved observations. A dictionary edit must preserve the key order and value types. A set edit must preserve a literal string set.
 
 Set `BLAST_CONFIG_KEYS=1` with the existing `BLAST_PROFILE` capture. The tracked fields are listed in `trace/config_key_fields.json`. Merge the main and worker reports with `trace/build_config_keys.py`.
+
+### Compilation failures
+
+When a single patched Python file cannot compile, the selector keeps the baseline importers of an observed lazy module or the owners and importers of a test file. It confirms the failure with the ordinary Python compiler so type-comment parser diagnostics preserve the general fallback. Core modules and mixed-file changes keep the full suite.

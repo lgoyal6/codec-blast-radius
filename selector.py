@@ -416,6 +416,14 @@ def configuration_keys(before, after):
     return None
 
 
+def fails_compilation(source, path):
+    try:
+        compile(source, path, "exec", dont_inherit=True)
+    except SyntaxError:
+        return True
+    return False
+
+
 class Selector:
     def __init__(self, baseline, source, whole_function=False, semantics=None):
         self.baseline = baseline
@@ -578,8 +586,18 @@ class Selector:
             LineSourceShape(before, path, old_lines, self.source_tree(path))
             if old_lines else self.shape(path)
         )
-        new = LineSourceShape(after, path, added) if added else SourceShape(after, path)
-        compile(new.tree, path, "exec", dont_inherit=True)
+        try:
+            new = LineSourceShape(after, path, added) if added else SourceShape(after, path)
+            compile(new.tree, path, "exec", dont_inherit=True)
+        except SyntaxError:
+            if not single_file or not fails_compilation(after, path):
+                raise
+            if path.startswith("tests/") and file.owns and not path.endswith("/__init__.py"):
+                return file.owns | file.imports | file.executed | file.readers, "test-compile-failure"
+            lazy = getattr(self.semantics, "lazy_modules", {}).get(path)
+            if lazy is None:
+                raise
+            return int(lazy, 16) | file.readers, "lazy-compile-failure"
         if comment_only(before, after, removed, added) and ast.dump(old.tree) == ast.dump(new.tree):
             return file.readers, "comment-readers"
         if removed & old.imports or added & new.imports:

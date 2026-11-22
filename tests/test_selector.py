@@ -112,6 +112,35 @@ class SelectorTest(unittest.TestCase):
         ):
             self.assertEqual(selector.select(add(name, line)), (15, {"added-file"}))
 
+    def test_compile_failure_uses_lazy_dependencies_for_one_validated_patch(self):
+        self.baseline.files[self.path].readers = 8
+        profile = SimpleNamespace(lazy_modules={self.path: "2"})
+        selector = Selector(self.baseline, self.root, semantics=profile)
+        for suffix in ("if ):\n    pass\n", "return None\n"):
+            with self.subTest(suffix=suffix):
+                patch = patch_for(self.path, self.source, self.source + suffix)
+                self.assertEqual(selector.select(patch), (10, {"lazy-compile-failure"}))
+                self.assertEqual(Selector(self.baseline, self.root).select(patch), (15, {"unsupported-patch"}))
+                (self.root / "doc.txt").write_text("before\n")
+                self.assertEqual(
+                    selector.select(patch + patch_for("doc.txt", "before\n", "after\n")),
+                    (15, {"unsupported-patch"}),
+                )
+
+    def test_misplaced_type_comment_does_not_count_as_compilation_failure(self):
+        profile = SimpleNamespace(lazy_modules={self.path: "2"})
+        selector = Selector(self.baseline, self.root, semantics=profile)
+        patch = patch_for(self.path, self.source, self.source + "# type: Ignore\n")
+        self.assertEqual(selector.select(patch), (15, {"unsupported-patch"}))
+
+    def test_compilation_failure_keeps_the_test_files_owners_and_readers(self):
+        path = "tests/test_example.py"
+        (self.root / "tests").mkdir()
+        (self.root / path).write_text(self.source)
+        self.baseline.files[path] = FileMap({}, set(), 2, 4, 8, 0)
+        patch = patch_for(path, self.source, self.source + "return None\n")
+        self.assertEqual(Selector(self.baseline, self.root).select(patch), (14, {"test-compile-failure"}))
+
     def test_collection_falls_back(self):
         self.baseline.files[self.path].collection.add(3)
         patch = patch_for(self.path, self.source, self.source.replace("and b", "or b"))
