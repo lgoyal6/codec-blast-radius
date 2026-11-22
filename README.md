@@ -159,6 +159,8 @@ The handler pass instruments unchanged baseline dictionary lambdas at creation a
 Use the same pinned checkout, Python 3.13, and test setup as the other baseline traces. Set `BLAST_HANDLERS=1` and invoke the existing runtime capture with the trace directory on `PYTHONPATH`. Then merge the main and worker reports into the semantic profile with `trace/build_handlers.py`.
 
 
+The fixture-pair selector can narrow read-only expected-query edits when the input and metadata remain identical. It preserves the scoped setup readers for other changes.
+
 ### New package modules
 
 The root package pass records import requests, file lookups, and package enumeration on the pinned baseline. A single newly created root module with only an optional docstring and literal assignments can use that evidence when its name has no observed lookup. Tests that may enumerate the package remain eligible.

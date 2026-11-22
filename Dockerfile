@@ -8,6 +8,6 @@ FROM python:3.13-slim@sha256:e48f59cdba69a3cbd9ed2cf0f348d90d45a8d350d98134cf107
 ENV PYTHONDONTWRITEBYTECODE=1 PYTHONUNBUFFERED=1
 WORKDIR /entry
 COPY --from=upstream /baseline /baseline
-COPY --chmod=0444 selector.py patches.py semantics.py semantic_edits.py baseline.json.gz semantics.json.gz ./
+COPY --chmod=0444 selector.py fixture_pairs.py patches.py semantics.py semantic_edits.py baseline.json.gz semantics.json.gz ./
 USER 65534:65534
 ENTRYPOINT ["python", "/entry/selector.py"]

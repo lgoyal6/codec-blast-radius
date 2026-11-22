@@ -11,6 +11,7 @@ from functools import cache, cached_property
 from itertools import accumulate
 from pathlib import Path
 
+from fixture_pairs import fixture_pair_users
 from patches import parse_patch, split_lines
 from semantic_edits import default_edit, only_preloaded_imports
 from semantics import Semantics
@@ -481,6 +482,10 @@ class Selector:
         if before == after:
             return 0, "identical"
         if not path.endswith(".py"):
+            if single_file:
+                users = fixture_pair_users(path, before, after, self.baseline, file.readers, self.source)
+                if users is not None:
+                    return users, "validated-fixture-pairs"
             return file.readers or self.baseline.all, "file-readers"
 
         old_lines = removed | anchors
