@@ -183,3 +183,7 @@ Set `BLAST_CONFIG_KEYS=1` with the existing `BLAST_PROFILE` capture. The tracked
 The warm-import trace records which leaf modules have completed initialization before each lazy module starts loading. The selector admits a project dependency only when the same leaf was ready in the pinned baseline suite and in a fresh interpreter importing the target directly. Reverse-order collection observations can narrow that evidence further. Packages, partially initialized modules, and modules with dynamic attribute hooks are excluded.
 
 Run the baseline suite with `BLAST_WARM_MODE=full` and the trace directory on `PYTHONPATH`. Use `capture_warm_reverse.py` with the catalog at `/tests.json` for reversed collection. The cold capture imports the module names from `/trace/targets.json` in fresh interpreters. These names come from the baseline profile's `lazy_module_users` keys. Collect captures under `/reports` and rebuild the map with `trace/build_warm_imports.py`.
+
+### TPC fixture consumers
+
+A fixture edit that preserves the pinned pair loader can use the executor methods that consume the affected fields. The TPC-DS executor uses input SQL and execution flags. Its expected SQL remains covered through the existing optimizer readers. Literal-only input edits and `execute` flag changes keep the affected executor methods and any tests sharing an input cache key. Changes outside those guards retain the shared setup readers.
