@@ -69,6 +69,18 @@ class SelectorTest(unittest.TestCase):
         self.assertEqual(full.expressions, body.expressions)
         self.assertIs(full.comparisons[0], body.comparisons[0])
 
+    def test_observed_warm_import_is_scoped_to_the_importing_module(self):
+        profile = SimpleNamespace(
+            lazy_modules={self.path: "6"}, stable_modules=frozenset(), warm_imports={},
+        )
+        selector = Selector(self.baseline, self.root, semantics=profile)
+        edit = patch_for(self.path, self.source, "from sqlglot.helper import validation_probe\n" + self.source)
+        self.assertEqual(selector.select(edit), (15, {"import-change"}))
+        profile.warm_imports[self.path] = {"sqlglot.helper"}
+        self.assertEqual(selector.select(edit), (6, {"observed-lazy-import"}))
+        cold = patch_for(self.path, self.source, "from sqlglot.cold import validation_probe\n" + self.source)
+        self.assertEqual(selector.select(cold), (15, {"import-change"}))
+
     def test_multiline_boolean_covers_the_earlier_operand(self):
         patch = patch_for(self.path, self.source, self.source.replace("and b", "or b"))
         self.assertEqual(Selector(self.baseline, self.root).select(patch), (3, {"statement"}))

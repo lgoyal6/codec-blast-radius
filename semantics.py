@@ -281,6 +281,9 @@ class Semantics:
         self.stable_modules = frozenset(imports.get("stable_stdlib_modules", ()))
         self.stable_collection_modules = frozenset(imports.get("stable_collection_modules", ()))
         self.lazy_modules = imports.get("lazy_module_users", {})
+        self.warm_imports = {
+            path: frozenset(names) for path, names in imports.get("module_warm_imports", {}).items()
+        }
         defaults = profile.get("default_profile", {})
         self.default_seen = int(defaults.get("seen", "0"), 16)
         self.default_direct = int(defaults.get("direct", "0"), 16)

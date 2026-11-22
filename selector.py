@@ -592,6 +592,9 @@ class Selector:
                     if file.collection
                     else self.semantics.stable_modules
                 )
+                warm = getattr(self.semantics, "warm_imports", {}).get(path)
+                if warm:
+                    stable = stable | warm
                 if lazy is not None and only_preloaded_imports(old, new, removed, added, stable):
                     return int(lazy, 16), "observed-lazy-import"
             return self.baseline.all, "import-change"

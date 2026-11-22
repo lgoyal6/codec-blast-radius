@@ -4,6 +4,9 @@ import atexit
 import os
 from pathlib import Path
 
+if os.environ.get("BLAST_WARM_MODE"):
+    import profile_warm_imports
+
 if output := os.environ.get("BLAST_PROFILE"):
     if os.environ.get("BLAST_CONFIG_KEYS"):
         import profile_runtime as runtime
