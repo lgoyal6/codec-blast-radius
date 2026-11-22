@@ -319,11 +319,12 @@ def class_updates(before, after, removed, added, enum_options=None):
 
 
 class Selector:
-    def __init__(self, baseline, source, whole_function=False, semantics=None, guard_body=False):
+    def __init__(self, baseline, source, whole_function=False, semantics=None, guard_body=False, guard_file=False):
         self.baseline = baseline
         self.source = source
         self.whole_function = whole_function
         self.guard_body = guard_body
+        self.guard_file = guard_file
         self.semantics = None if whole_function else semantics
 
     @cache
@@ -538,6 +539,13 @@ class Selector:
             changes = parse_patch(patch)
             for change in changes:
                 candidates, reason = self.select_file(change, len(changes) == 1)
+                if self.guard_file and reason not in {"comment-readers", "identical", "file-readers"}:
+                    file = self.baseline.files.get(change.path)
+                    if file is not None:
+                        broader = file.executed | file.owns | file.readers
+                        if broader & ~candidates:
+                            candidates |= broader
+                            reason += "+file-recall"
                 selected |= candidates
                 reasons.add(reason)
                 if selected == self.baseline.all:
@@ -584,7 +592,10 @@ def main():
     profile = options.map.with_name("semantics.json.gz")
     if not options.whole_function and profile.is_file():
         semantics = Semantics(profile, REVISION, baseline.indices)
-    selector = Selector(baseline, options.source, options.whole_function, semantics, guard_body=True)
+    selector = Selector(
+        baseline, options.source, options.whole_function, semantics,
+        guard_body=True, guard_file=not options.whole_function,
+    )
     catalog = json.loads((options.data / "tests.json").read_text())["tests"]
     tests = sorted(
         (

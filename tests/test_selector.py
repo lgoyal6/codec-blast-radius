@@ -79,6 +79,14 @@ class SelectorTest(unittest.TestCase):
         guarded = Selector(self.baseline, self.root, guard_body=True)
         self.assertEqual(guarded.select(patch), (7, {"recall-function"}))
 
+    def test_file_guard_preserves_readers_and_tests_outside_the_function(self):
+        file = self.baseline.files[self.path]
+        file.executed |= 8
+        file.owns = 8
+        patch = patch_for(self.path, self.source, self.source.replace("and b", "or b"))
+        guarded = Selector(self.baseline, self.root, guard_body=True, guard_file=True)
+        self.assertEqual(guarded.select(patch), (15, {"recall-function+file-recall"}))
+
     def test_insertion_covers_whole_function(self):
         patch = patch_for(self.path, self.source, self.source.replace("    if (", "    return -1\n    if ("))
         self.assertEqual(Selector(self.baseline, self.root).select(patch), (7, {"whole-function"}))
