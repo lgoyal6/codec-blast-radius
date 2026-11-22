@@ -13,7 +13,9 @@ from pathlib import Path
 
 from fixture_pairs import fixture_pair_users
 from patches import parse_patch, split_lines
-from semantic_edits import default_edit, inserted_branch_exit, only_preloaded_imports
+from semantic_edits import (
+    default_edit, inserted_branch_exit, only_preloaded_imports, unreached_call_edit,
+)
 from semantics import Semantics
 
 REVISION = "eb11aec4be8cb2122afe713a4816662c3f0fb2fa"
@@ -722,6 +724,23 @@ class Selector:
             and not (removed & old.definition_lines or added & new.definition_lines)
         )
         if within_body:
+            absent = getattr(self.semantics, "unreached_calls", {}).get(path)
+            if single_file and absent and len(old_scopes) == 1 and not file.covered(removed):
+                scope, = old_scopes
+                before_lines, after_lines = split_lines(before), split_lines(after)
+                changed_source = [before_lines[line - 1] for line in removed]
+                changed_source.extend(after_lines[line - 1] for line in added)
+                if (
+                    not file.collection.intersection(scope.lines)
+                    and not any(DIRECTIVE.search(line) for line in changed_source)
+                    and unreached_call_edit(old, new, removed, added, absent)
+                ):
+                    metadata = union(self.baseline.references.get(name, 0) for name in (
+                        "__code__", "__traceback__", "co_code", "co_consts", "co_firstlineno",
+                        "co_lines", "co_names", "co_positions", "getsource", "getsourcelines",
+                        "getframeinfo", "f_lineno", "tb_lineno", "linecache",
+                    ))
+                    return file.readers | metadata, "unreached-literal-call"
             whole = (
                 self.whole_function or anchors or len(removed) != len(added)
                 or not same_indentation(before, after, removed, added)

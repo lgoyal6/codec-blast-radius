@@ -10,6 +10,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "trace"))
 from build_container_config import observe
 from build_reflection import compile_masks
 from selector import configuration_keys, parser_dispatch_keys, token_dispatch_keys
+from semantic_edits import unreached_call_edit
 
 
 class ContainerConfigTest(unittest.TestCase):
@@ -97,3 +98,30 @@ class ContainerConfigTest(unittest.TestCase):
             self.assertEqual(result, {"Changed": "1e"})
             observations["source.py:1:0"]["Changed"].add("@collection")
             self.assertEqual(compile_masks(baseline, source, observations, {"Changed"}), {"Changed": "1f"})
+
+    def test_unreached_call_requires_a_literal_edit_at_the_original_statement(self):
+        def shape(source):
+            return SimpleNamespace(tree=ast.parse(source))
+
+        before = shape(
+            "def task(flag):\n"
+            "    if flag:\n"
+            "        return call(flag, copy=False)\n"
+            "    return fallback(flag)\n"
+        )
+        def edit(content, line=3, sites=("3:3",)):
+            return unreached_call_edit(before, shape(content), {line}, {line}, sites)
+
+        self.assertTrue(edit(
+            "def task(flag):\n    if flag:\n        return call(flag, copy=True)\n    return fallback(flag)\n"
+        ))
+        self.assertTrue(edit(
+            "def task(flag):\n    if flag:\n        return call(flag)\n    return fallback(flag)\n"
+        ))
+        for source in (
+            "def task(flag):\n    if flag:\n        return call(flag, copy=flag)\n    return fallback(flag)\n",
+            "def task(flag):\n    if flag:\n        pass\n    return call(flag, copy=False)\n",
+            "def task(flag):\n    if not flag:\n        return call(flag, copy=True)\n    return fallback(flag)\n",
+        ):
+            with self.subTest(source=source):
+                self.assertFalse(edit(source))

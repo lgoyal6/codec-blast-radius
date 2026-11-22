@@ -371,3 +371,75 @@ def inserted_branch_exit(old, new, added, anchors, scope):
                 finally:
                     body.insert(index, insertion)
     return ()
+
+
+def literal_call_change(earlier, later):
+    if len(earlier.args) != len(later.args) or any(
+        isinstance(value, ast.Starred) for value in [*earlier.args, *later.args]
+    ):
+        return False
+
+    def keywords(call):
+        return {item.arg: item.value for item in call.keywords}
+
+    old_keywords, new_keywords = keywords(earlier), keywords(later)
+    if (
+        None in old_keywords or None in new_keywords
+        or len(old_keywords) != len(earlier.keywords) or len(new_keywords) != len(later.keywords)
+    ):
+        return False
+    shared = old_keywords.keys() & new_keywords.keys()
+    if [key for key in old_keywords if key in shared] != [key for key in new_keywords if key in shared]:
+        return False
+    argument_pairs = list(zip(earlier.args, later.args))
+    argument_pairs.extend(
+        (old_keywords.get(name), new_keywords.get(name))
+        for name in old_keywords.keys() | new_keywords.keys()
+    )
+    literal_changes = [
+        (old, new) for old, new in argument_pairs
+        if old is not new and (old is None or new is None or ast.dump(old) != ast.dump(new))
+    ]
+    return len(literal_changes) == 1 and all(
+        value is None or isinstance(value, ast.Constant) and type(value.value) in LITERAL_VALUES
+        for value in literal_changes[0]
+    )
+
+
+def unreached_call_edit(old, new, removed, added, sites):
+    if not removed or removed != added or old.tree.type_ignores or new.tree.type_ignores:
+        return False
+
+    def statement(tree, known=False):
+        matches = [
+            node for node in ast.walk(tree)
+            if isinstance(node, (ast.Assign, ast.Expr, ast.Return))
+            and node.lineno <= min(removed) <= max(removed) <= node.end_lineno
+            and (not known or f"{node.lineno}:{node.end_lineno}" in sites)
+        ]
+        return matches[0] if len(matches) == 1 else None
+
+    earlier, later = statement(old.tree, known=True), statement(new.tree)
+    if earlier is None or later is None or (
+        earlier.lineno, earlier.end_lineno, earlier.col_offset
+    ) != (later.lineno, later.end_lineno, later.col_offset):
+        return False
+    old_calls = [node for node in ast.walk(earlier) if isinstance(node, ast.Call)]
+    new_calls = [node for node in ast.walk(later) if isinstance(node, ast.Call)]
+    if len(old_calls) != len(new_calls):
+        return False
+    for before, after in zip(old_calls, new_calls):
+        if not (
+            before.lineno <= min(removed) <= max(removed) <= before.end_lineno
+            and after.lineno <= min(added) <= max(added) <= after.end_lineno
+            and literal_call_change(before, after)
+        ):
+            continue
+        args, keywords = after.args, after.keywords
+        try:
+            after.args, after.keywords = before.args, before.keywords
+            if ast.dump(old.tree) == ast.dump(new.tree):
+                return True
+        finally:
+            after.args, after.keywords = args, keywords
+    return False

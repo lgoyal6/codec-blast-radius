@@ -205,3 +205,8 @@ For dispatch tables keyed by `TokenType`, the selector can narrow handler substi
 To capture token lookups, set `BLAST_TOKEN_DISPATCH=1` and point `BLAST_CONFIG_FIELDS` to `trace/token_dispatch_fields.json`. Run the regular catalog and isolated parser stress test separately. Pass both reports and the worker reports to `trace/build_config_keys.py --token-dispatch --pinned-source`. This profile treats dictionary truth tests and the pinned parser's token-membership helper as independent of table values.
 
 The optional namespace profile records the receiving class at each `__dict__` read. It preserves tests with unknown or unobserved receivers, and it widens selection when the affected class namespace was inspected during collection. Run `profile_reflection.start` in pytest and its workers through the same baseline capture entry point, then pass all reports and the pinned checkout to `trace/build_reflection.py`.
+
+
+The optional call reachability profile covers literal argument changes in an existing statement when two baseline captures agree that its complete span is unexecuted. The selector verifies that the surrounding syntax, binding, and statement location are preserved. Anything outside that shape uses the ordinary selection rules, and the selector retains source and code metadata readers.
+
+Run `trace/build_call_reach.py SOURCE BASELINE TARGETS` to generate candidate source lines. Capture the complete catalog and the isolated parser stress test with `profile_call_reach.start` in pytest and its workers, setting `BLAST_CALL_TARGETS` to `TARGETS`. Compile the resulting reports with `trace/build_call_reach.py SOURCE BASELINE OUTPUT --profile PROFILE --reports REPORTS...`.
