@@ -1,10 +1,17 @@
-"""Narrow read-only expected-fixture changes to their actual consumers."""
+"""Keep the executor consumers of validated fixture edits."""
 import sys
 
 EXECUTOR = "tests/test_executor.py::TestExecutor::"
-PAIRS = {
-    f"tests/fixtures/optimizer/tpc-{kind}/tpc-{kind}.sql": f"tpc{kind}"
+FIXTURES = {
+    f"tpc{kind}": f"tests/fixtures/optimizer/tpc-{kind}/tpc-{kind}.sql"
     for kind in ("h", "ds")
+}
+PAIRS = {path: kind for kind, path in FIXTURES.items()}
+EXECUTES = {kind: EXECUTOR + f"test_execute_{kind}" for kind in FIXTURES}
+OPTIMIZED_TPCH = EXECUTOR + "test_optimized_tpch"
+CONSUMERS = {
+    "tpch": (EXECUTES["tpch"], OPTIMIZED_TPCH),
+    "tpcds": (EXECUTES["tpcds"],),
 }
 
 
@@ -24,7 +31,7 @@ def pairs(data):
     return result
 
 
-def read_only_queries(queries, source):
+def read_only_asts(queries, source):
     sys.path.insert(0, str(source))
     try:
         from sqlglot import exp, parse_one
@@ -35,14 +42,31 @@ def read_only_queries(queries, source):
         "Anonymous", "Command", "Create", "Drop", "Insert", "Update", "Delete",
         "Merge", "Into", "Copy", "Pragma", "Set", "Transaction", "Commit", "Rollback",
     ) if hasattr(exp, name))
+    result = []
     try:
         for query in queries:
-            ast = parse_one(query)
-            if not isinstance(ast, exp.Query) or any(isinstance(node, prohibited) for node in ast.walk()):
-                return False
+            tree = parse_one(query)
+            if not isinstance(tree, exp.Query) or any(isinstance(node, prohibited) for node in tree.walk()):
+                return None
+            result.append(tree)
     except (SqlglotError, ValueError):
+        return None
+    return result
+
+
+def literal_query_edit(old, new, source):
+    trees = read_only_asts((old, new), source)
+    if trees is None:
         return False
-    return True
+    from sqlglot import exp
+
+    def erase_values(node):
+        if type(node) is exp.Literal:
+            return exp.Literal(this="0", is_string=node.is_string)
+        return node
+
+    before, after = (tree.transform(erase_values, copy=False) for tree in trees)
+    return before == after
 
 
 def fixture_pair_users(path, before, after, baseline, readers, source):
@@ -50,15 +74,47 @@ def fixture_pair_users(path, before, after, baseline, readers, source):
     if kind is None:
         return None
     try:
-        original = pairs(before)
-        revised = pairs(after)
+        original, revised = pairs(before), pairs(after)
     except (IndexError, ValueError):
         return None
-    if [item[:2] for item in original] != [item[:2] for item in revised]:
+    if len(original) != len(revised):
         return None
-    changes = [query for old, new in zip(original, revised) if old[2] != new[2] for query in (old[2], new[2])]
-    name = EXECUTOR + f"test_optimized_{kind}"
-    if not baseline.indices.get(name, 0) & readers or not read_only_queries(changes, source):
+
+    selected = set()
+    cache_keys = set()
+    for old, new in zip(original, revised):
+        old_meta, old_input, old_expected = old
+        new_meta, new_input, new_expected = new
+        metadata = dict(old_meta), dict(new_meta)
+        if {key for key in metadata[0].keys() | metadata[1].keys()
+                if metadata[0].get(key) != metadata[1].get(key)} - {"execute"}:
+            return None
+        if old_input != new_input:
+            if not literal_query_edit(old_input, new_input, source):
+                return None
+            selected.update(CONSUMERS[kind])
+            cache_keys.update((old_input, new_input))
+        if old_meta != new_meta:
+            if read_only_asts((old_input, new_input), source) is None:
+                return None
+            selected.add(EXECUTES[kind])
+            cache_keys.update((old_input, new_input))
+        if old_expected != new_expected and kind == "tpch":
+            if read_only_asts((old_expected, new_expected), source) is None:
+                return None
+            selected.add(OPTIMIZED_TPCH)
+
+    if cache_keys:
+        peer = "tpcds" if kind == "tpch" else "tpch"
+        try:
+            sibling_inputs = {sql for _, sql, _ in pairs((source / FIXTURES[peer]).read_bytes())}
+        except (IndexError, OSError, ValueError):
+            return None
+        if cache_keys & sibling_inputs:
+            selected.update(CONSUMERS[peer])
+    if any(not baseline.indices.get(name, 0) & readers for name in CONSUMERS[kind]):
+        return None
+    if any(name not in baseline.indices for name in selected):
         return None
     scoped_readers = sum(mask for test, mask in baseline.indices.items() if test.startswith(EXECUTOR) and mask & readers)
-    return (readers & ~scoped_readers) | baseline.indices[name]
+    return (readers & ~scoped_readers) | sum(baseline.indices[name] for name in selected)
