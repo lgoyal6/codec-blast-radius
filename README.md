@@ -193,3 +193,9 @@ A fixture edit that preserves the pinned pair loader can use the executor method
 ### Inserted branch exits
 
 A patch that inserts one return or raise before an unchanged statement can use that statement's baseline coverage. Structural AST checks reject edits that introduce bindings or change other statements. Missing coverage and collection execution retain the whole-function fallback.
+
+### Parser dispatch entries
+
+Parser dispatch changes can use observed lookups when a dialect's table had no whole-table readers across baseline execution. The selector admits literal-key edits to lambdas without default arguments. It keeps inherited table initializers in the same order and leaves other class initialization unchanged.
+
+For capture, use the existing configuration profile with `BLAST_CONFIG_FIELDS` pointing to a JSON array containing `FUNCTION_PARSERS`. Include the isolated parser stress test as well as the regular catalog. Build the map with `trace/build_config_keys.py --parser-dispatch --pinned-source` and the pinned checkout.

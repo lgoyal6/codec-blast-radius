@@ -3,13 +3,15 @@ import ast
 import importlib.abc
 import importlib.machinery
 import json
+import os
 import sys
 from collections import defaultdict
 from pathlib import Path
 
 import profile_runtime as runtime
 
-FIELDS = frozenset(json.loads(Path(__file__).with_name("config_key_fields.json").read_bytes()))
+FIELDS_FILE = Path(os.environ.get("BLAST_CONFIG_FIELDS", Path(__file__).with_name("config_key_fields.json")))
+FIELDS = frozenset(json.loads(FIELDS_FILE.read_bytes()))
 
 
 def tracked(node):

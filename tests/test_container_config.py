@@ -6,7 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "trace"))
 
 from build_container_config import observe
-from selector import configuration_keys
+from selector import configuration_keys, parser_dispatch_keys
 
 
 class ContainerConfigTest(unittest.TestCase):
@@ -42,3 +42,18 @@ class ContainerConfigTest(unittest.TestCase):
         self.assertEqual(configuration_keys(before, after, True), {"b", "new", "old"})
         for unsafe in ("{'b': 2, 'a': 1}", "{'a': 1, 'b': x}", "{'a': 1, 'a': 6}"):
             self.assertIsNone(configuration_keys(before, parse(unsafe), True))
+
+    def test_dispatch_entries_preserve_initializer_evaluation(self):
+        def parse(expression):
+            return ast.parse(expression, mode="eval").body
+
+        before = parse("{**Base.FUNCTION_PARSERS, 'A': lambda self: self.foo()}")
+        self.assertEqual(parser_dispatch_keys(before, parse("{**Base.FUNCTION_PARSERS}")), {"A"})
+        self.assertEqual(parser_dispatch_keys(before, parse("{**Base.FUNCTION_PARSERS, 'B': lambda self: self.bar()}")), {"A", "B"})
+        for unsafe in (
+            "{**Base.FUNCTION_PARSERS, 'A': lambda self=build(): foo()}",
+            "{**Other.FUNCTION_PARSERS, 'A': lambda self: self.foo()}",
+            "{'A': lambda self: self.foo(), **Base.FUNCTION_PARSERS}",
+            "{**Base.FUNCTION_PARSERS, 'A': dynamic_factory()}",
+        ):
+            self.assertIsNone(parser_dispatch_keys(before, parse(unsafe)))
