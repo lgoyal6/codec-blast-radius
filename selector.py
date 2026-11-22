@@ -328,7 +328,24 @@ def deferred_lambda(old, new, removed, added):
     return ()
 
 
-def class_updates(before, after, removed, added, enum_options=None):
+def optional_schema_edit(before, after):
+    if (
+        not isinstance(before, dict) or not isinstance(after, dict)
+        or not all(type(key) is str and type(value) is bool
+                   for schema in (before, after) for key, value in schema.items())
+    ):
+        return False
+    shared_before = [(key, value) for key, value in before.items() if key in after]
+    shared_after = [(key, value) for key, value in after.items() if key in before]
+    return (
+        before.keys() != after.keys()
+        and shared_before == shared_after
+        and {key for key, value in before.items() if value}
+        == {key for key, value in after.items() if value}
+    )
+
+
+def class_updates(before, after, removed, added, enum_options=None, schema_keys=False):
     if not removed or not added:
         return ()
     matched = []
@@ -361,8 +378,12 @@ def class_updates(before, after, removed, added, enum_options=None):
                     for value in values
                 ):
                     return ()
-            elif literal_shape(ast.literal_eval(values[0])) != literal_shape(ast.literal_eval(values[1])):
-                return ()
+            else:
+                old_value, new_value = map(ast.literal_eval, values)
+                if literal_shape(old_value) != literal_shape(new_value) and not (
+                    schema_keys and key[1] == "arg_types" and optional_schema_edit(old_value, new_value)
+                ):
+                    return ()
     except (TypeError, ValueError, OverflowError):
         return ()
     if without_values(before.tree, list(earlier.values())) != without_values(after.tree, list(later.values())):
@@ -410,7 +431,8 @@ class Selector:
 
     def observed_class_candidates(self, path, file, old, new, removed, added, single_file):
         options = self.semantics.enum_fields.get(path, {}) if single_file else {}
-        members = class_updates(old, new, removed, added, options)
+        schema_keys = single_file and path.startswith("sqlglot/expressions/")
+        members = class_updates(old, new, removed, added, options, schema_keys)
         if not members:
             return None
         unknown = self.baseline.all & ~self.semantics.seen
@@ -427,12 +449,15 @@ class Selector:
                 if single_file:
                     before = ast.literal_eval(value)
                     after = ast.literal_eval(new.assignments[(owner, name)].value)
-                    changed = {key for key in before if before[key] != after[key]}
-                    validators = self.semantics.schema_flag_users(path, owner, changed)
-                    if validators is not None:
-                        return validators | file.readers | (file.executed & unknown)
+                    if before.keys() == after.keys():
+                        changed = {key for key in before if before[key] != after[key]}
+                        validators = self.semantics.schema_flag_users(path, owner, changed)
+                        if validators is not None:
+                            return validators | file.readers | (file.executed & unknown)
                 schema = self.semantics.schema_users(path, owner)
                 if schema is not None:
+                    if single_file and before.keys() != after.keys():
+                        schema |= int(self.semantics.direct.get("arg_types", "0"), 16)
                     return schema | file.readers | (file.executed & unknown)
         if path.startswith("sqlglot/dialects/") and len(members) == 1:
             owner, name = next(iter(members))
