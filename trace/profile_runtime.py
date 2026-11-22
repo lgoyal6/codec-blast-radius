@@ -29,6 +29,7 @@ OPERATORS = {
 }
 BUILTINS = (bool, int, float, str, bytes, type(None))
 CONTEXT = "@collection"
+CAPTURE_COLLECTION_OPERANDS = os.environ.get("BLAST_COLLECTION_OPERANDS") == "1"
 TRACE = None
 EXCLUDED = ("tests/test_parser.py::TestParser::test_max_nodes",)
 LOCATIONS = (
@@ -241,7 +242,7 @@ def factory_result(site, function):
 def compare(site, operator, left, right):
     observed = OPERATORS[operator](left, right)
     pair = TRACE.operands[site]
-    if CONTEXT == "@collection":
+    if CONTEXT == "@collection" and not CAPTURE_COLLECTION_OPERANDS:
         pair["@collection"].add("?")
     elif "?" not in pair[CONTEXT]:
         a, b = encode(left), encode(right)
@@ -297,12 +298,17 @@ class Trace:
         self.mapping_reads = defaultdict(lambda: defaultdict(set))
         self.seen = set()
         self.calls = defaultdict(set)
+        self.submitted = []
+        self.completed = set()
 
     def save(self):
         self.path.write_text(
             json.dumps(
                 {
                     "seen": sorted(self.seen),
+                    **({
+                        "submitted": self.submitted, "completed": sorted(self.completed),
+                    } if CAPTURE_COLLECTION_OPERANDS else {}),
                     "calls": {
                         site: sorted(tests) for site, tests in self.calls.items()
                     },
@@ -352,13 +358,18 @@ def start(path):
     return TRACE
 
 
-def worker(path, context, function, args, kwargs):
+def worker(path, context, function, args, kwargs, task=None):
     global CONTEXT
+    traced_before_unpickling = TRACE is not None
     if TRACE is None:
         active = start(path.with_name(f"{path.stem}.worker-{os.getpid()}.json"))
         atexit.register(active.save)
     CONTEXT = context
-    return function(*args, **kwargs)
+    try:
+        return function(*args, **kwargs)
+    finally:
+        if task is not None and traced_before_unpickling:
+            TRACE.completed.add(task)
 
 
 def main():
@@ -368,7 +379,11 @@ def main():
     submit = ProcessPoolExecutor.submit
 
     def instrument(pool, function, /, *args, **kwargs):
-        return submit(pool, worker, path, CONTEXT, function, args, kwargs)
+        task = None
+        if CAPTURE_COLLECTION_OPERANDS:
+            task = len(active.submitted)
+            active.submitted.append(CONTEXT)
+        return submit(pool, worker, path, CONTEXT, function, args, kwargs, task)
 
     ProcessPoolExecutor.submit = instrument
     args = sys.argv[2:] or ["tests", *(f"--deselect={name}" for name in EXCLUDED)]

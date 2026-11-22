@@ -721,6 +721,19 @@ class Selector:
                     return int(lazy, 16), "observed-lazy-import"
             return self.baseline.all, "import-change"
 
+        if single_file and self.semantics is not None and path.startswith("sqlglot/"):
+            collection_sites = getattr(self.semantics, "collection_operands", None)
+            if collection_sites:
+                scoped = self.semantics.collection_comparison_users(
+                    path, file, old, new, removed, added,
+                )
+                if scoped is not None:
+                    metadata = union(self.baseline.references.get(name, 0) for name in (
+                        "__code__", "__traceback__", "co_code", "co_consts", "co_firstlineno",
+                        "co_lines", "co_names", "co_positions", "getsource", "getsourcelines",
+                    ))
+                    return scoped | file.readers | metadata, "observed-collection-comparison"
+
         escape_tables = getattr(self.semantics, "escape_tables", None)
         if single_file and escape_tables and path == "sqlglot/dialects/dialect.py":
             changes = escape_table_changes(old, new, removed, added)

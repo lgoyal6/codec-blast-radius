@@ -226,3 +226,16 @@ readers, and namespace or source inspection. Collection-time observations, ident
 delimiter changes, and edits that change keys or surrounding code use the broader
 fallback. Rebuild the masks with `trace/build_escape_tables.py` using the complete
 baseline capture from `profile_escape_reads.start` and the module namespace capture.
+
+Collection comparisons may use typed operands captured in both collection orders
+and in a complete baseline run. The selector scopes an isolated single-line edit
+only if it leaves the comparison's result unchanged on every collection operand.
+It retains runtime observations that could change and tests with unobserved
+coverage. Source and code readers remain selected.
+
+Set `BLAST_COLLECTION_OPERANDS=1` and load `trace/sitecustomize.py` before
+starting Python so spawned test workers are instrumented before unpickling.
+Run the full baseline plus the isolated parser stress test,
+and collect the catalog in forward and reverse file order. Merge the reports
+with `trace/build_collection_operands.py`. The builder retains test contexts
+with missing worker results.

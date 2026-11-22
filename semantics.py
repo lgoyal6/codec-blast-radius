@@ -266,6 +266,7 @@ class Semantics:
         self.unread_docs = frozenset(profile.get("unread_docs", ()))
         self.module_literals = profile.get("module_literals", {})
         self.escape_tables = profile.get("escape_tables")
+        self.collection_operands = profile.get("collection_operands", {})
         self.unreached_calls = {path: frozenset(spans) for path, spans in profile.get("unreached_calls", {}).items()}
         self.token_dispatch_functions = frozenset(profile.get("token_dispatch_functions", ()))
         self.registry = profile["registry"]
@@ -380,6 +381,29 @@ class Semantics:
             return 0
         line, column = edit
         return int(sites.get(f"{line}:{column}", "0"), 16)
+
+    def collection_comparison_users(self, path, file, old, new, removed, added):
+        sites = self.collection_operands.get(path)
+        if not sites or len(removed) != 1 or removed != added:
+            return None
+        line, = removed
+        if str(line) not in sites or line not in file.collection:
+            return None
+        edit = compare_edit(old, new, removed, added)
+        if edit is None:
+            return None
+        edit_line, column, before, after, value = edit
+        entry = sites[str(line)].get(str(column)) if edit_line == line else None
+        if entry is None:
+            return None
+        collected, reached, groups = entry
+        if not all(compare_outcomes(fact, before, after, value) for fact in collected):
+            return None
+        affected = file.covered(removed) | int(reached, 16)
+        for mask, facts in groups:
+            if all(compare_outcomes(fact, before, after, value) for fact in facts):
+                affected &= ~int(mask, 16)
+        return affected
 
     def equivalent(self, path, lines, old, new, removed, added):
         edit = compare_edit(old, new, removed, added)

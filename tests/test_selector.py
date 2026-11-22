@@ -306,6 +306,20 @@ class SemanticEvidenceTest(unittest.TestCase):
             with self.subTest(source=source):
                 self.assertIsNone(escape_table_changes(old, SourceShape(source, path), {1}, {1}))
 
+    def test_collection_comparison_retains_changed_and_unknown_operands(self):
+        path = "sqlglot/example.py"
+        old = SourceShape(b"result = x > 1\n", path)
+        new = SourceShape(b"result = x >= 1\n", path)
+        semantics = Semantics.__new__(Semantics)
+        unchanged = '[false,["int",2],["int",1]]'
+        changed = '[true,["int",1],["int",1]]'
+        fact_group = [[unchanged], "7", [("1", [unchanged]), ("2", [changed])]]
+        semantics.collection_operands = {path: {"1": {"9": fact_group}}}
+        file = FileMap({1: 15}, {1}, 0, 0, 0, 15)
+        self.assertEqual(semantics.collection_comparison_users(path, file, old, new, {1}, {1}), 14)
+        fact_group[0].append(changed)
+        self.assertIsNone(semantics.collection_comparison_users(path, file, old, new, {1}, {1}))
+
     def test_default_edit_identifies_bound_parameters(self):
         old = SimpleNamespace(tree=ast.parse("def f(a, /, b=2, *, c=3):\n    return b + c\n"))
         new = SimpleNamespace(tree=ast.parse("def f(a, /, b=4, *, c=3):\n    return b + c\n"))
