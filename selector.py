@@ -219,6 +219,19 @@ def comment_only(before, after, old_lines, new_lines):
     return True
 
 
+def same_indentation(before, after, removed, added):
+    old_rows = split_lines(before)
+    new_rows = split_lines(after)
+    for old_line, new_line in zip(sorted(removed), sorted(added)):
+        earlier = old_rows[old_line - 1]
+        later = new_rows[new_line - 1]
+        old_indent = earlier[:len(earlier) - len(earlier.lstrip(b" \t\f"))]
+        new_indent = later[:len(later) - len(later.lstrip(b" \t\f"))]
+        if old_indent != new_indent:
+            return False
+    return True
+
+
 def literal_shape(value):
     if isinstance(value, dict):
         return (dict, tuple((type(key), key, literal_shape(item)) for key, item in value.items()))
@@ -436,6 +449,10 @@ class Selector:
             and not (removed & old.definition_lines or added & new.definition_lines)
         )
         if within_body:
+            whole = (
+                self.whole_function or anchors or len(removed) != len(added)
+                or not same_indentation(before, after, removed, added)
+            )
             hits = 0
             widened = False
             for scope, changed in old_scopes.items():
@@ -445,7 +462,6 @@ class Selector:
                         relevant.update(expression)
                 if relevant & file.collection:
                     break
-                whole = self.whole_function or anchors or len(removed) != len(added)
                 scoped_hits = 0 if whole else file.covered(relevant)
                 if not scoped_hits:
                     if file.collection.intersection(scope.lines):
