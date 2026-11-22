@@ -101,6 +101,16 @@ class SelectorTest(unittest.TestCase):
         patch = patch_for(self.path, self.source, self.source.replace("    if (", "    return -1\n    if ("))
         self.assertEqual(Selector(self.baseline, self.root).select(patch), (7, {"whole-function"}))
 
+    def test_inserted_branch_exit_uses_the_next_original_statement(self):
+        text = "def choose(flag):\n    if flag:\n        value = 1\n        return value\n    return 0\n"
+        (self.root / self.path).write_text(text)
+        self.baseline.files[self.path] = FileMap({2: 3, 3: 1, 4: 1, 5: 2}, set(), 0, 4, 0, 3)
+        selector = Selector(self.baseline, self.root)
+        edit = patch_for(self.path, text, text.replace("        return value", "        return None\n        return value"))
+        self.assertEqual(selector.select(edit), (5, {"inserted-branch-exit"}))
+        unsafe = patch_for(self.path, text, text.replace("        return value", "        return (local := 0)\n        return value"))
+        self.assertEqual(selector.select(unsafe), (7, {"whole-function"}))
+
     def test_dedenting_a_return_includes_tests_from_other_branches(self):
         text = "def choose(flag):\n    if flag:\n        mark()\n        return 1\n    return 0\n"
         (self.root / self.path).write_text(text)

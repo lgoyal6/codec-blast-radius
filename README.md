@@ -183,3 +183,7 @@ Set `BLAST_CONFIG_KEYS=1` with the existing `BLAST_PROFILE` capture. The tracked
 The warm-import trace records which leaf modules have completed initialization before each lazy module starts loading. The selector admits a project dependency only when the same leaf was ready in the pinned baseline suite and in a fresh interpreter importing the target directly. Reverse-order collection observations can narrow that evidence further. Packages, partially initialized modules, and modules with dynamic attribute hooks are excluded.
 
 Run the baseline suite with `BLAST_WARM_MODE=full` and the trace directory on `PYTHONPATH`. Use `capture_warm_reverse.py` with the catalog at `/tests.json` for reversed collection. The cold capture imports the module names from `/trace/targets.json` in fresh interpreters. These names come from the baseline profile's `lazy_module_users` keys. Collect captures under `/reports` and rebuild the map with `trace/build_warm_imports.py`.
+
+### Inserted branch exits
+
+A patch that inserts one return or raise before an unchanged statement can use that statement's baseline coverage. Structural AST checks reject edits that introduce bindings or change other statements. Missing coverage and collection execution retain the whole-function fallback.

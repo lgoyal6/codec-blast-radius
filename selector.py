@@ -13,7 +13,7 @@ from pathlib import Path
 
 from fixture_pairs import fixture_pair_users
 from patches import parse_patch, split_lines
-from semantic_edits import default_edit, only_preloaded_imports
+from semantic_edits import default_edit, inserted_branch_exit, only_preloaded_imports
 from semantics import Semantics
 
 REVISION = "eb11aec4be8cb2122afe713a4816662c3f0fb2fa"
@@ -611,6 +611,21 @@ class Selector:
                 self.whole_function or anchors or len(removed) != len(added)
                 or not same_indentation(before, after, removed, added)
             )
+            if (
+                not removed and single_file and not self.whole_function and len(old_scopes) == 1
+                and path.startswith("sqlglot/")
+            ):
+                scope, = old_scopes
+                edge = inserted_branch_exit(old, new, added, anchors, scope)
+                if edge and not file.collection.intersection(scope.lines):
+                    hits = file.covered(edge)
+                    if hits:
+                        references = getattr(self.baseline, "references", {})
+                        metadata = union(references.get(name, 0) for name in (
+                            "__code__", "co_code", "co_consts", "co_lines", "co_names",
+                            "co_positions", "getsource", "getsourcelines", "f_lineno",
+                        ))
+                        return hits | file.readers | metadata, "inserted-branch-exit"
             hits = 0
             widened = False
             for scope, changed in old_scopes.items():
