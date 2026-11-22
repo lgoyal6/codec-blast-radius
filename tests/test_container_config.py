@@ -2,10 +2,13 @@ import ast
 import sys
 import unittest
 from pathlib import Path
+from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "trace"))
 
 from build_container_config import observe
+from build_reflection import compile_masks
 from selector import configuration_keys, parser_dispatch_keys, token_dispatch_keys
 
 
@@ -74,3 +77,23 @@ class ContainerConfigTest(unittest.TestCase):
         ):
             with self.subTest(unsafe=unsafe):
                 self.assertIsNone(token_dispatch_keys(before, parse(unsafe), functions))
+
+    def test_observed_namespace_preserves_unknown_and_collection_dependencies(self):
+        baseline = SimpleNamespace(
+            files={"source.py": SimpleNamespace(lines={1: 15, 2: 16})},
+            references={"__dict__": 31},
+            indices={"other": 1, "affected": 2, "unresolved": 4, "unknown": 8, "named": 16},
+            all=31,
+        )
+        observations = {
+            "source.py:1:0": {
+                "Elsewhere": {"other"}, "Changed": {"affected"}, "?": {"unknown"},
+            },
+        }
+        with TemporaryDirectory() as folder:
+            source = Path(folder)
+            (source / "source.py").write_text("obj.__dict__\ngetattr(obj, '__dict__')\n")
+            result = compile_masks(baseline, source, observations, {"Changed"})
+            self.assertEqual(result, {"Changed": "1e"})
+            observations["source.py:1:0"]["Changed"].add("@collection")
+            self.assertEqual(compile_masks(baseline, source, observations, {"Changed"}), {"Changed": "1f"})

@@ -262,6 +262,7 @@ class Semantics:
         self.dictionary_membership = profile.get("dictionary_membership", {})
         self.parser_dispatch_keys = profile.get("parser_dispatch_keys", {})
         self.token_dispatch_keys = profile.get("token_dispatch_keys", {})
+        self.class_namespace_users = profile.get("class_namespace_users", {})
         self.token_dispatch_functions = frozenset(profile.get("token_dispatch_functions", ()))
         self.registry = profile["registry"]
         additions = profile.get("added_module_profile", {})

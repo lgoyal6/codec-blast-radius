@@ -578,8 +578,10 @@ class Selector:
         elif token_dispatch:
             references = self.baseline.references
             metadata = union(references.get(name, 0) for name in (
-                "__code__", "__dict__", "getmembers", "getsource", "getsourcelines", "vars",
+                "__code__", "getmembers", "getsource", "getsourcelines", "vars",
             ))
+            namespace_users = self.semantics.class_namespace_users.get(f"{module}:{owner}")
+            metadata |= references.get("__dict__", 0) if namespace_users is None else int(namespace_users, 16)
             keys = token_dispatch_keys(old_value, new_value, self.semantics.token_dispatch_functions)
             key_type = "TokenType"
         else:
