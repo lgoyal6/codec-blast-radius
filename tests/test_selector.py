@@ -78,6 +78,13 @@ class SelectorTest(unittest.TestCase):
         patch = patch_for(self.path, self.source, self.source.replace("    if (", "    return -1\n    if ("))
         self.assertEqual(Selector(self.baseline, self.root).select(patch), (7, {"whole-function"}))
 
+    def test_dedenting_a_return_includes_tests_from_other_branches(self):
+        text = "def choose(flag):\n    if flag:\n        mark()\n        return 1\n    return 0\n"
+        (self.root / self.path).write_text(text)
+        self.baseline.files[self.path] = FileMap({2: 3, 3: 1, 4: 1, 5: 2}, set(), 0, 0, 0, 3)
+        patch = patch_for(self.path, text, text.replace("        return 1", "    return 1"))
+        self.assertEqual(Selector(self.baseline, self.root).select(patch), (3, {"whole-function"}))
+
     def test_collection_falls_back(self):
         self.baseline.files[self.path].collection.add(3)
         patch = patch_for(self.path, self.source, self.source.replace("and b", "or b"))
