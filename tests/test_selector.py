@@ -85,6 +85,22 @@ class SelectorTest(unittest.TestCase):
         patch = patch_for(self.path, text, text.replace("        return 1", "    return 1"))
         self.assertEqual(Selector(self.baseline, self.root).select(patch), (3, {"whole-function"}))
 
+    def test_inert_new_root_module_keeps_possible_enumerators(self):
+        profile = SimpleNamespace(added_modules=(self.baseline.all, 4, {"known"}))
+        selector = Selector(self.baseline, self.root, semantics=profile)
+        def add(name, line):
+            return f"--- /dev/null\n+++ b/{name}\n@@ -0,0 +1 @@\n+{line}\n".encode()
+        self.assertEqual(
+            selector.select(add("sqlglot/unused.py", "VERSION = 1")),
+            (4, {"inert-added-module"}),
+        )
+        for name, line in (
+            ("sqlglot/known.py", "VERSION = 1"),
+            ("sqlglot/typing/unused.py", "VERSION = 1"),
+            ("sqlglot/unused.py", "raise RuntimeError()"),
+        ):
+            self.assertEqual(selector.select(add(name, line)), (15, {"added-file"}))
+
     def test_collection_falls_back(self):
         self.baseline.files[self.path].collection.add(3)
         patch = patch_for(self.path, self.source, self.source.replace("and b", "or b"))

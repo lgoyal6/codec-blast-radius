@@ -5,7 +5,12 @@ import os
 from pathlib import Path
 
 if output := os.environ.get("BLAST_PROFILE"):
-    if os.environ.get("BLAST_HANDLERS"):
+    if os.environ.get("BLAST_MODULES"):
+        import profile_runtime as runtime
+        from profile_added_modules import start
+
+        runtime.start = start
+    elif os.environ.get("BLAST_HANDLERS"):
         import profile_runtime as runtime
         from profile_handlers import start
 

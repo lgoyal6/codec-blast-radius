@@ -157,3 +157,10 @@ For a private factory used only by observed parser mappings, the selector compar
 The handler pass instruments unchanged baseline dictionary lambdas at creation and records which test enters each callback. It preserves the original functions and watches Python function entry through `sys.monitoring`. It applies when the surrounding AST stays the same and the changed callback had no recorded collection use.
 
 Use the same pinned checkout, Python 3.13, and test setup as the other baseline traces. Set `BLAST_HANDLERS=1` and invoke the existing runtime capture with the trace directory on `PYTHONPATH`. Then merge the main and worker reports into the semantic profile with `trace/build_handlers.py`.
+
+
+### New package modules
+
+The root package pass records import requests, file lookups, and package enumeration on the pinned baseline. A single newly created root module with only an optional docstring and literal assignments can use that evidence when its name has no observed lookup. Tests that may enumerate the package remain eligible.
+
+Set `BLAST_MODULES=1` in the baseline trace environment. Combine the full-catalog main and worker reports with `trace/build_added_modules.py`.

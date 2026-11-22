@@ -38,6 +38,7 @@ class Hunk:
 class FileChange:
     path: str
     hunks: list[Hunk]
+    created: bool = False
 
     def apply(self, before):
         source = split_lines(before)
@@ -80,8 +81,12 @@ def parse_patch(data):
     seen = set()
     index = 0
     while index < len(lines):
+        new_mode = False
         if lines[index].startswith(b"diff --git "):
             index += 1
+            if index < len(lines) and lines[index] == b"new file mode 100644\n":
+                new_mode = True
+                index += 1
             if index < len(lines) and lines[index].startswith(b"index "):
                 index += 1
         if (
@@ -90,8 +95,11 @@ def parse_patch(data):
             or not lines[index + 1].startswith(b"+++ ")
         ):
             raise ValueError("unsupported patch metadata")
-        path = filename(lines[index], "a/")
-        if filename(lines[index + 1], "b/") != path or path in seen:
+        created = lines[index] in (b"--- /dev/null\n", b"--- /dev/null")
+        path = filename(lines[index + 1], "b/")
+        if (new_mode and not created) or (
+            not created and filename(lines[index], "a/") != path
+        ) or path in seen:
             raise ValueError("renamed or repeated file")
         seen.add(path)
         index += 2
@@ -123,7 +131,12 @@ def parse_patch(data):
             hunks.append(Hunk(old_start, old_count, new_start, new_count, rows))
         if not hunks:
             raise ValueError("file without text hunks")
-        changes.append(FileChange(path, hunks))
+        if created and (
+            len(hunks) != 1 or hunks[0].old_count or hunks[0].old_start
+            or hunks[0].new_start != 1 or not hunks[0].new_count
+        ):
+            raise ValueError("invalid new-file hunk")
+        changes.append(FileChange(path, hunks, created))
     if not changes:
         raise ValueError("patch has no file changes")
     return changes

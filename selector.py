@@ -232,6 +232,29 @@ def same_indentation(before, after, removed, added):
     return True
 
 
+def inert_module(tree):
+    statements = tree.body
+    if (
+        statements and isinstance(statements[0], ast.Expr)
+        and isinstance(statements[0].value, ast.Constant)
+        and type(statements[0].value.value) is str
+    ):
+        statements = statements[1:]
+    literals = (str, bytes, int, bool, float, type(None))
+
+    def literal(value):
+        if isinstance(value, ast.Tuple):
+            return all(literal(item) for item in value.elts)
+        return isinstance(value, ast.Constant) and type(value.value) in literals
+
+    return all(
+        isinstance(node, ast.Assign)
+        and all(isinstance(target, ast.Name) for target in node.targets)
+        and literal(node.value)
+        for node in statements
+    )
+
+
 def literal_shape(value):
     if isinstance(value, dict):
         return (dict, tuple((type(key), key, literal_shape(item)) for key, item in value.items()))
@@ -436,6 +459,20 @@ class Selector:
 
     def select_file(self, change, single_file=True):
         path = change.path
+        if change.created:
+            module = re.fullmatch(r"sqlglot/([a-z][a-z0-9_]*)\.py", path)
+            seen, enumerators, looked_up = getattr(self.semantics, "added_modules", (0, 0, ()))
+            if (
+                single_file and module and seen == self.baseline.all
+                and module[1] not in looked_up
+                and path not in self.baseline.files and not (self.source / path).exists()
+            ):
+                after, *_ = change.apply(b"")
+                tree = ast.parse(after, filename=path, type_comments=True)
+                compile(tree, path, "exec", dont_inherit=True)
+                if inert_module(tree):
+                    return enumerators, "inert-added-module"
+            return self.baseline.all, "added-file"
         file = self.baseline.files.get(path)
         if file is None:
             return self.baseline.all, "unmapped-file"

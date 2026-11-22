@@ -258,6 +258,12 @@ class Semantics:
         self.attributes = profile["attributes"]
         self.enum_fields = profile.get("enum_fields", {})
         self.registry = profile["registry"]
+        additions = profile.get("added_module_profile", {})
+        self.added_modules = (
+            int(additions.get("seen", "0"), 16),
+            int(additions.get("enumerated", "0"), 16),
+            frozenset(additions.get("looked_up", ())),
+        )
         handlers = profile.get("handler_profile", {})
         self.handler_seen = int(handlers.get("seen", "0"), 16)
         self.handlers = {
