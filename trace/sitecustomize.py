@@ -8,7 +8,12 @@ if os.environ.get("BLAST_WARM_MODE"):
     import profile_warm_imports
 
 if output := os.environ.get("BLAST_PROFILE"):
-    if os.environ.get("BLAST_CONFIG_KEYS"):
+    if os.environ.get("BLAST_ANNOTATIONS"):
+        import profile_runtime as runtime
+        from profile_annotations import start
+
+        runtime.start = start
+    elif os.environ.get("BLAST_CONFIG_KEYS"):
         import profile_runtime as runtime
         from profile_config_keys import start
 

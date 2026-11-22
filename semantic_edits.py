@@ -64,6 +64,55 @@ def equal_outside_spans(old, new, old_span, new_span):
     )
 
 
+def postponed_annotation_edit(old, new, removed, added):
+    """Return the qualified function name for an isolated annotation replacement."""
+    if removed != added or len(removed) != 1:
+        return None
+    if not any(
+        isinstance(node, ast.ImportFrom) and node.module == "__future__"
+        and any(alias.name == "annotations" for alias in node.names)
+        for node in old.tree.body
+    ):
+        return None
+    line, = removed
+    syntax = (ast.Name, ast.Attribute, ast.Subscript, ast.Tuple, ast.List, ast.Constant,
+              ast.BinOp, ast.BitOr, ast.Load)
+
+    def spans(shape, statements, owners=()):
+        for node in statements:
+            if not node.lineno <= line <= node.end_lineno:
+                continue
+            if isinstance(node, ast.ClassDef) and not node.decorator_list:
+                yield from spans(shape, node.body, (*owners, node.name))
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            if any(
+                not isinstance(decorator, ast.Name)
+                or decorator.id not in {"classmethod", "staticmethod", "property"}
+                for decorator in node.decorator_list
+            ):
+                continue
+            args = node.args
+            params = (*args.posonlyargs, *args.args, *args.kwonlyargs, args.vararg, args.kwarg)
+            annotations = [(param.arg, param.annotation) for param in params if param is not None]
+            annotations.append(("return", node.returns))
+            for name, value in annotations:
+                if (
+                    value is not None and value.lineno == value.end_lineno == line
+                    and all(isinstance(part, syntax) for part in ast.walk(value))
+                ):
+                    yield (
+                        (".".join((*owners, node.name)), node.lineno, name),
+                        shape.ascii_span(line, value.col_offset, value.end_col_offset),
+                    )
+
+    updated = dict(spans(new, new.tree.body))
+    for site, span in spans(old, old.tree.body):
+        if equal_outside_spans(old, new, span, updated.get(site)):
+            return site[0]
+    return None
+
+
 def operator_only(old, new, earlier, later, before, after):
     spans = []
     for shape, node, operator in ((old, earlier, before), (new, later, after)):

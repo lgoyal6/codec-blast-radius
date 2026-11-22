@@ -8,7 +8,10 @@ from types import SimpleNamespace
 from patches import parse_patch
 from selector import FileMap, LineSourceShape, Selector, SourceShape, schema_key_edit, schedule
 from semantics import Semantics, same_result
-from semantic_edits import compare_edit, copy_toggle, default_edit, only_preloaded_imports, operator_only
+from semantic_edits import (
+    compare_edit, copy_toggle, default_edit, only_preloaded_imports, operator_only,
+    postponed_annotation_edit,
+)
 
 
 def patch_for(path, old, new):
@@ -68,6 +71,36 @@ class SelectorTest(unittest.TestCase):
         self.assertEqual(full.scopes_at({4}), body.scopes_at({4}))
         self.assertEqual(full.expressions, body.expressions)
         self.assertIs(full.comparisons[0], body.comparisons[0])
+
+    def test_annotation_edit_requires_isolated_postponed_type(self):
+        source = b"from __future__ import annotations\nclass Thing:\n    def f(self, x: int = 1) -> str:\n        return str(x)\n"
+        for updated, expected in (
+            (source.replace(b"-> str:", b"-> list[str] | None:"), "Thing.f"),
+            (source.replace(b"x: int", b"x: str"), "Thing.f"),
+            (source.replace(b"x: int = 1", b"x: str = 2"), None),
+            (source.replace(b"-> str:", b"-> factory():"), None),
+            (source.replace(b"-> str:", b"-> int: # changed source"), None),
+        ):
+            with self.subTest(updated=updated):
+                old = SourceShape(source, self.path)
+                new = SourceShape(updated, self.path)
+                self.assertEqual(postponed_annotation_edit(old, new, {3}, {3}), expected)
+
+    def test_observed_annotation_keeps_runtime_and_source_readers(self):
+        source = "from __future__ import annotations\ndef f(x: int):\n    return x\n"
+        (self.root / self.path).write_text(source)
+        self.baseline.references = {"__code__": 2}
+        self.baseline.files[self.path].readers = 4
+        semantic = Semantics.__new__(Semantics)
+        semantic.annotation_profile = {
+            "seen": "f",
+            "readers": {"sqlglot.example:f": ["1", False]},
+        }
+        selector = Selector(self.baseline, self.root, semantics=semantic)
+        edit = patch_for(self.path, source, source.replace("x: int", "x: str"))
+        self.assertEqual(selector.select(edit), (7, {"observed-annotation-readers"}))
+        semantic.annotation_profile["readers"]["sqlglot.example:f"][1] = True
+        self.assertIsNone(semantic.annotation_users(self.path, "f", self.baseline.all))
 
     def test_observed_warm_import_is_scoped_to_the_importing_module(self):
         profile = SimpleNamespace(

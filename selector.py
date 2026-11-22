@@ -15,7 +15,7 @@ from fixture_pairs import fixture_pair_users
 from patches import parse_patch, split_lines
 from semantic_edits import (
     default_edit, escape_table_changes, inserted_branch_exit, module_literal_edit,
-    only_preloaded_imports, unreached_call_edit,
+    only_preloaded_imports, postponed_annotation_edit, unreached_call_edit,
 )
 from semantics import Semantics
 
@@ -734,6 +734,21 @@ class Selector:
             name = module_literal_edit(old, new, old_lines, added, constants)
             if name is not None:
                 return int(constants[name], 16) | file.readers, "observed-module-binding"
+
+        if (
+            single_file and path.startswith("sqlglot/")
+            and removed & old.definition_lines
+            and getattr(self.semantics, "annotation_profile", None)
+        ):
+            function = postponed_annotation_edit(old, new, removed, added)
+            if function is not None:
+                users = self.semantics.annotation_users(path, function, self.baseline.all)
+                if users is not None:
+                    metadata = union(self.baseline.references.get(name, 0) for name in (
+                        "__annotations__", "__annotate__", "__code__",
+                        "getsource", "getsourcelines", "getframeinfo", "f_lineno", "linecache",
+                    ))
+                    return users | metadata | file.readers, "observed-annotation-readers"
 
         old_scopes = old.scopes_at(old_lines)
         new_scopes = new.scopes_at(added) if added else old_scopes

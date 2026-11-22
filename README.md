@@ -67,6 +67,16 @@ From the entry repository, combine the successful reports. The parser stress tes
 python3 trace/build_semantics.py /src baseline.json.gz semantics.json.gz /profile/*.json
 ```
 
+### Postponed function annotations
+
+The annotation profile records calls that inspect SQLGlot function annotations or signatures. The selector uses it for an isolated, single-line annotation replacement under `from __future__ import annotations`. It retains source and code metadata readers and keeps the regular fallback if the function was inspected during collection. CPython stores function annotations separately from the function's ordinary attribute dictionary.
+
+Use the runtime capture commands above with `BLAST_ANNOTATIONS=1` and a separate report directory. Include both the main and parser stress captures and their worker reports when packing the profile.
+
+```sh
+python3 trace/build_annotations.py semantics.json.gz semantics.json.gz /annotations/*.json
+```
+
 
 ### Expression argument validation
 

@@ -265,6 +265,7 @@ class Semantics:
         self.class_namespace_users = profile.get("class_namespace_users", {})
         self.unread_docs = frozenset(profile.get("unread_docs", ()))
         self.module_literals = profile.get("module_literals", {})
+        self.annotation_profile = profile.get("annotation_profile")
         self.escape_tables = profile.get("escape_tables")
         self.unreached_calls = {path: frozenset(spans) for path, spans in profile.get("unreached_calls", {}).items()}
         self.token_dispatch_functions = frozenset(profile.get("token_dispatch_functions", ()))
@@ -299,6 +300,14 @@ class Semantics:
         self.default_functions = defaults.get("functions", {})
         self.factory_defaults = defaults.get("factory_defaults", {})
         self.factory_readers = int(defaults.get("factory_readers", "0"), 16)
+
+    def annotation_users(self, path, function, catalog):
+        profile = self.annotation_profile
+        if int(profile["seen"], 16) != catalog:
+            return None
+        key = path.removesuffix(".py").replace("/", ".") + ":" + function
+        readers, collection = profile["readers"].get(key, ("0", False))
+        return None if collection else int(readers, 16)
 
     def escape_table_users(self, changes):
         profile = self.escape_tables
