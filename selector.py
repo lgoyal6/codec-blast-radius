@@ -378,9 +378,12 @@ class Selector:
                 return file.owns | file.imports | file.executed | file.readers, "test-import"
             if single_file and self.semantics is not None:
                 lazy = self.semantics.lazy_modules.get(path)
-                if lazy is not None and only_preloaded_imports(
-                    old, new, removed, added, self.semantics.stable_modules
-                ):
+                stable = (
+                    self.semantics.stable_collection_modules
+                    if file.collection
+                    else self.semantics.stable_modules
+                )
+                if lazy is not None and only_preloaded_imports(old, new, removed, added, stable):
                     return int(lazy, 16), "observed-lazy-import"
             return self.baseline.all, "import-change"
 

@@ -85,7 +85,7 @@ Add `--schema-reports /schema/*.json` to the semantic profile compiler command.
 
 ### Lazy import requests
 
-The import trace records explicit project imports, cached dialect lookups, and registry enumeration. The compiler combines those observations with reverse import dependencies and class coverage. The selector narrows isolated top-level import edits in dialect modules only when the affected module was neither requested nor executed during collection and the changed imports are limited to already initialized standard library leaf modules.
+The import trace records explicit project imports, cached dialect lookups, and registry enumeration. The compiler combines those observations with reverse import dependencies and class coverage. The selector narrows isolated top-level import edits in dialect modules when the baseline can attribute the affected module and the changed imports target already initialized standard library leaf modules.
 
 From the pinned checkout, use another output directory with the same capture environment.
 
@@ -96,6 +96,15 @@ BLAST_IMPORTS=1 BLAST_PROFILE=/imports/stress.json python -c 'import profile_imp
 ```
 
 Add `--import-reports /imports/*.json` to the semantic profile compiler command.
+
+For collection-time imports, run two separate collection-only traces from the pinned checkout. The compiler retains tests owned by each observed importing file and its dependents, unions existing runtime coverage, and keeps full selection for any unattributed collection request. The selector only narrows imports from modules initialized before collection in both baseline traces.
+
+```sh
+python "$ENTRY/trace/profile_collection_imports.py" /imports/collection-forward.json "$KIT/sample/tests.json"
+python "$ENTRY/trace/profile_collection_imports.py" /imports/collection-reverse.json "$KIT/sample/tests.json" --reverse
+```
+
+Pass the two collection files with `--collection-reports` and list the runtime reports separately under `--import-reports`.
 
 
 For compatible one-line comparison edits, the selector can verify a literal or operator change from the original source byte ranges. It uses the whole syntax tree whenever that exact check cannot establish the edit.

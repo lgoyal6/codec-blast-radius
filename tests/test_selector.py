@@ -95,6 +95,21 @@ class SelectorTest(unittest.TestCase):
         header_patch = patch_for(self.path, text, text.replace("'k'", "'j'"))
         self.assertEqual(Selector(self.baseline, self.root).select(header_patch)[0], 15)
 
+    def test_collection_import_must_be_preloaded_before_collection(self):
+        text = "from itertools import chain\n"
+        file = self.root / self.path
+        file.write_text(text)
+        self.baseline.files[self.path].collection.add(1)
+        profile = SimpleNamespace(
+            lazy_modules={self.path: "1"}, stable_modules={"itertools", "decimal"},
+            stable_collection_modules={"itertools"},
+        )
+        selector = Selector(self.baseline, self.root, semantics=profile)
+        warm = patch_for(self.path, text, "from itertools import repeat\n")
+        cold = patch_for(self.path, text, "from decimal import Decimal\n")
+        self.assertEqual(selector.select(warm), (1, {"observed-lazy-import"}))
+        self.assertEqual(selector.select(cold), (15, {"import-change"}))
+
     def test_enum_config_uses_observed_readers_only_for_known_members(self):
         path = "sqlglot/dialects/example.py"
         file = self.root / path

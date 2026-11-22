@@ -186,6 +186,7 @@ class Semantics:
         self.lookups = profile["lookups"]
         imports = profile.get("import_profile", {})
         self.stable_modules = frozenset(imports.get("stable_stdlib_modules", ()))
+        self.stable_collection_modules = frozenset(imports.get("stable_collection_modules", ()))
         self.lazy_modules = imports.get("lazy_module_users", {})
         defaults = profile.get("default_profile", {})
         self.default_seen = int(defaults.get("seen", "0"), 16)
