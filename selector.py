@@ -328,7 +328,7 @@ def deferred_lambda(old, new, removed, added):
     return ()
 
 
-def optional_schema_edit(before, after):
+def schema_key_edit(before, after):
     if (
         not isinstance(before, dict) or not isinstance(after, dict)
         or not all(type(key) is str and type(value) is bool
@@ -337,12 +337,7 @@ def optional_schema_edit(before, after):
         return False
     shared_before = [(key, value) for key, value in before.items() if key in after]
     shared_after = [(key, value) for key, value in after.items() if key in before]
-    return (
-        before.keys() != after.keys()
-        and shared_before == shared_after
-        and {key for key, value in before.items() if value}
-        == {key for key, value in after.items() if value}
-    )
+    return before.keys() != after.keys() and shared_before == shared_after
 
 
 def touched_assignments(source, positions):
@@ -382,7 +377,10 @@ def class_updates(before, after, removed, added, enum_options=None, schema_keys=
             else:
                 old_value, new_value = map(ast.literal_eval, values)
                 if literal_shape(old_value) != literal_shape(new_value) and not (
-                    schema_keys and key[1] == "arg_types" and optional_schema_edit(old_value, new_value)
+                    schema_keys and key[1] == "arg_types"
+                    and all(isinstance(value, ast.Dict) for value in values)
+                    and len(values[0].keys) == len(old_value) and len(values[1].keys) == len(new_value)
+                    and schema_key_edit(old_value, new_value)
                 ):
                     return ()
     except (TypeError, ValueError, OverflowError):
@@ -506,6 +504,10 @@ class Selector:
     def observed_class_candidates(self, path, file, old, new, removed, added, single_file):
         options = self.semantics.enum_fields.get(path, {}) if single_file else {}
         schema_keys = single_file and path.startswith("sqlglot/expressions/")
+        if schema_keys and not (removed and added):
+            changed = removed or added
+            if changed and max(changed) - min(changed) + 1 == len(changed):
+                removed, added = removed or {min(changed)}, added or {min(changed)}
         members = class_updates(old, new, removed, added, options, schema_keys)
         if not members:
             return None
