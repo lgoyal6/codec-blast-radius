@@ -258,6 +258,12 @@ class Semantics:
         self.attributes = profile["attributes"]
         self.enum_fields = profile.get("enum_fields", {})
         self.registry = profile["registry"]
+        handlers = profile.get("handler_profile", {})
+        self.handler_seen = int(handlers.get("seen", "0"), 16)
+        self.handlers = {
+            path: {site: int(mask, 16) for site, mask in sites.items()}
+            for path, sites in handlers.get("sites", {}).items()
+        }
         self.fresh_copies = profile.get("fresh_copies", {})
         self.direct = profile["direct"]
         self.schemas = profile["schemas"]

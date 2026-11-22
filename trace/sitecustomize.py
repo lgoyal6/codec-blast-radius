@@ -5,7 +5,12 @@ import os
 from pathlib import Path
 
 if output := os.environ.get("BLAST_PROFILE"):
-    if os.environ.get("BLAST_COPIES"):
+    if os.environ.get("BLAST_HANDLERS"):
+        import profile_runtime as runtime
+        from profile_handlers import start
+
+        runtime.start = start
+    elif os.environ.get("BLAST_COPIES"):
         from profile_copies import start
     elif os.environ.get("BLAST_DEFAULTS"):
         from profile_defaults import start

@@ -262,6 +262,34 @@ def without_lambda_body(tree, node):
         node.body = body
 
 
+def registry_lambda(shape, lines):
+    first, last = min(lines), max(lines)
+    candidates = []
+    for node in ast.walk(shape.tree):
+        if not isinstance(node, ast.Dict) or not (node.lineno <= first <= last <= node.end_lineno):
+            continue
+        for value in node.values:
+            if (
+                isinstance(value, ast.Lambda)
+                and value.lineno == value.body.lineno
+                and value.body.lineno <= first <= last <= value.body.end_lineno
+            ):
+                candidates.append(value)
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def deferred_registry_site(old, new, removed, added):
+    if not removed or not added:
+        return None
+    prior, updated = registry_lambda(old, removed), registry_lambda(new, added)
+    if (
+        prior is not None and updated is not None
+        and without_lambda_body(old.tree, prior) == without_lambda_body(new.tree, updated)
+    ):
+        return f"{prior.lineno}:{prior.col_offset}"
+    return None
+
+
 def deferred_lambda(old, new, removed, added):
     if not removed or not added:
         return ()
@@ -487,6 +515,16 @@ class Selector:
             hits = file.covered(lambda_body)
             if hits:
                 return hits | file.readers, "lambda-body"
+
+        if single_file and getattr(self.semantics, "handlers", None):
+            handlers = self.semantics.handlers.get(path)
+            if handlers is not None:
+                site = deferred_registry_site(old, new, removed, added)
+                users = handlers.get(site)
+                if users is not None:
+                    metadata = self.baseline.references.get("__code__", 0)
+                    unseen = file.executed & ~self.semantics.handler_seen
+                    return users | unseen | metadata | file.readers, "observed-inline-handler"
 
         if path.startswith("tests/") and file.owns and not path.endswith("/__init__.py"):
             return file.owns | file.imports | file.executed | file.readers, "test-collection"

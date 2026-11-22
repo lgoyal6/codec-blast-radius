@@ -103,6 +103,21 @@ class SelectorTest(unittest.TestCase):
         patch = patch_for(self.path, text, changed)
         self.assertEqual(Selector(self.baseline, self.root).select(patch), (3, {"whole-function"}))
 
+    def test_inline_lambda_uses_baseline_callers_and_keeps_unobserved_tests(self):
+        text = 'class Parser:\n    HANDLERS = {"key": lambda x: x + 1}\n'
+        (self.root / self.path).write_text(text)
+        self.baseline.files[self.path] = FileMap({2: 3}, {2}, 8, 8, 0, 3)
+        self.baseline.references = {}
+        profile = Semantics.__new__(Semantics)
+        profile.handlers = {self.path: {"2:23": 1}}
+        profile.handler_seen = 1
+        profile.enum_fields = {}
+        selector = Selector(self.baseline, self.root, semantics=profile)
+        patch = patch_for(self.path, text, text.replace("x + 1", "x + 2"))
+        self.assertEqual(selector.select(patch), (11, {"observed-inline-handler"}))
+        unsupported = patch_for(self.path, text, text.replace('"key"', '"other"'))
+        self.assertEqual(selector.select(unsupported), (15, {"definition-or-collection"}))
+
     def test_deferred_lambda_preserves_the_surrounding_definition(self):
         text = "class Parser:\n    TABLE = {'k': lambda x: (\n        x + 1\n    )}\n"
         (self.root / self.path).write_text(text)

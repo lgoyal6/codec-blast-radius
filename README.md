@@ -2,7 +2,7 @@
 
 Selects regression tests for unified diffs against SQLGlot `eb11aec4be8cb2122afe713a4816662c3f0fb2fa`. The runtime matches tests by pytest node ID and emits the test numbers supplied by the scorer.
 
-The default uses line and expression coverage for comparable edits inside a function. It widens to the whole function for insertions, deletions, and changes without direct coverage. For isolated comparison edits, baseline operand observations can show when both operators give the same result. The selector also records class attribute providers, expression schema consumers, and calls to parser registry closures, and key lookups in the tokenizer numeric escape table. It also uses function coverage for isolated literal default changes when the body is unused during collection. Uncertain edits retain the coverage and import fallbacks. Collection, import, and unsupported changes have conservative fallbacks. Fixture reads during class, module, package, or session setup include each test that shares that scope. Worker assignment minimizes the largest load plus the per-worker charge using integer milliseconds.
+The default uses line and expression coverage for comparable edits inside a function. It widens to the whole function for insertions, deletions, indentation changes, and changes without direct coverage. For isolated comparison edits, baseline operand observations can show when both operators give the same result. The selector also records class attribute providers, expression schema consumers, and calls to parser registry closures, and key lookups in the tokenizer numeric escape table. It also uses function coverage for isolated literal default changes when the body is unused during collection. Uncertain edits retain the coverage and import fallbacks. Collection, import, and unsupported changes have conservative fallbacks. Fixture reads during class, module, package, or session setup include each test that shares that scope. Worker assignment minimizes the largest load plus the per-worker charge using integer milliseconds.
 
 ## Build and run
 
@@ -148,3 +148,12 @@ python3 "$selector_dir/trace/capture_fixture_scopes.py" /path/to/tests.json /tmp
 cd "$selector_dir"
 python3 trace/merge_fixture_scopes.py direct-baseline.json.gz /tmp/scoped-reads.json baseline.json.gz
 ```
+
+
+### Parser registry callbacks
+
+For a private factory used only by observed parser mappings, the selector compares effective defaults at each callback construction. Explicit overrides that preserve the old effective argument keep that callback unchanged. Uncertain changes retain the existing dependency selection.
+
+The handler pass instruments unchanged baseline dictionary lambdas at creation and records which test enters each callback. It preserves the original functions and watches Python function entry through `sys.monitoring`. It applies when the surrounding AST stays the same and the changed callback had no recorded collection use.
+
+Use the same pinned checkout, Python 3.13, and test setup as the other baseline traces. Set `BLAST_HANDLERS=1` and invoke the existing runtime capture with the trace directory on `PYTHONPATH`. Then merge the main and worker reports into the semantic profile with `trace/build_handlers.py`.
