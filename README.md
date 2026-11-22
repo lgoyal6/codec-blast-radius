@@ -102,7 +102,7 @@ For compatible one-line comparison edits, the selector can verify a literal or o
 
 ### Function defaults
 
-The baseline capture records function entries, arguments that equal the original literal defaults, and signature readers keyed by source path and qualified name. Tests covered by the original function map without a recorded entry remain selected. Collection-time reads and callables that can outlive their creator keep the broad fallback.
+The baseline capture records function entries, arguments that equal the original literal defaults, and signature readers keyed by source path and qualified name. Tests covered by the original function map without a recorded entry remain selected. Collection-time reads and callables that can outlive their creator keep the broad fallback. A private parser factory can use callback coverage when every baseline reference is a direct registry constructor, the changed default is omitted, and the returned callback is never invoked during collection. Call sites with an explicit value are unaffected by the default change. Reflection and unobserved coverage remain selected.
 
 From the pinned checkout, use a dedicated output directory and the same capture environment.
 

@@ -65,10 +65,10 @@ def compare_outcomes(record, before, after, replacement):
         return False
 
 
-def is_closure_factory(shape, name):
+def is_closure_factory(tree, name):
     definitions = [
         node
-        for node in shape.tree.body
+        for node in tree.body
         if isinstance(node, ast.FunctionDef) and node.name == name
     ]
     if len(definitions) != 1:
@@ -85,7 +85,7 @@ def is_closure_factory(shape, name):
         isinstance(node, ast.ImportFrom)
         and node.module == "__future__"
         and any(alias.name == "annotations" for alias in node.names)
-        for node in shape.tree.body
+        for node in tree.body
     )
     return (
         postponed
@@ -111,9 +111,9 @@ def closure_factory(selector, shape, name):
             return False
         module, identifier = imports[0]
         return is_closure_factory(
-            selector.shape(module.replace(".", "/") + ".py"), identifier
+            selector.shape(module.replace(".", "/") + ".py").tree, identifier
         )
-    return is_closure_factory(shape, name)
+    return is_closure_factory(shape.tree, name)
 
 
 def registry_edit(selector, old, new, removed, added):
@@ -190,6 +190,24 @@ class Semantics:
         self.default_seen = int(defaults.get("seen", "0"), 16)
         self.default_direct = int(defaults.get("direct", "0"), 16)
         self.default_functions = defaults.get("functions", {})
+        self.factory_defaults = defaults.get("factory_defaults", {})
+        self.factory_readers = int(defaults.get("factory_readers", "0"), 16)
+
+    def factory_default_users(self, path, name, changed, executed):
+        evidence = self.factory_defaults.get(f"{path}:{name}")
+        if evidence is None:
+            return None
+        readers, fields = evidence
+        if any(parameter not in fields for parameter in changed):
+            return None
+        keep = (
+            (executed & ~(self.seen & self.default_seen))
+            | int(readers, 16)
+            | self.factory_readers
+        )
+        for parameter in changed:
+            keep |= int(fields[parameter], 16)
+        return keep
 
     def default_users(self, path, name, changed, called):
         evidence = self.default_functions.get(f"{path}:{name}")

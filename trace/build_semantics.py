@@ -188,7 +188,7 @@ def build(source, coverage, reports, output, schema_reports=(), import_reports=(
         },
         "schemas": schemas,
         "import_profile": import_profile(source, import_reports, baseline),
-        "default_profile": default_profile(source, default_reports, baseline),
+        "default_profile": default_profile(source, default_reports, baseline, calls),
         "schema_validations": build_schema(source, schema_reports, stable_derivation, baseline),
     }
     with (

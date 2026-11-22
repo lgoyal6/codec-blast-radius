@@ -419,6 +419,10 @@ class Selector:
             default = default_edit(old, new, removed, added)
             if default is not None:
                 name, body, changed, may_escape = default
+                if single_file and changed and may_escape:
+                    users = self.semantics.factory_default_users(path, name, changed, file.executed)
+                    if users is not None:
+                        return users | file.readers, "observed-factory-default"
                 if not file.collection.intersection(body):
                     called = file.covered(body)
                     if called:

@@ -5,6 +5,7 @@ import json
 from collections import defaultdict
 
 from build_map import python_files, union
+from build_factory_defaults import factory_default_profile
 
 COLLECTION = "@collection"
 SPECIAL_ATTRIBUTES = {
@@ -16,27 +17,34 @@ SPECIAL_ATTRIBUTES = {
 }
 
 
-def direct_readers(source, baseline):
+FACTORY_ATTRIBUTES = SPECIAL_ATTRIBUTES | {"__closure__", "cell_contents", "getclosurevars"}
+
+
+def direct_readers(trees, baseline, attributes):
     hits = 0
-    for path, tree in python_files(source).items():
+    for path, tree in trees.items():
         file = baseline.files.get(path)
         if file is None:
             continue
         for node in ast.walk(tree):
             if isinstance(node, ast.Attribute):
                 name = node.attr
+            elif isinstance(node, ast.Name):
+                name = node.id
+            elif isinstance(node, ast.alias):
+                name = node.name
             elif isinstance(node, ast.Constant) and isinstance(node.value, str):
                 name = node.value
             else:
                 continue
-            if name in SPECIAL_ATTRIBUTES:
+            if name in attributes:
                 if node.lineno in file.collection:
                     return baseline.all
                 hits |= file.lines.get(node.lineno, 0)
     return hits
 
 
-def default_profile(source, reports, baseline):
+def default_profile(source, reports, baseline, registry_calls):
     if not reports:
         return {}
     seen = set()
@@ -70,8 +78,11 @@ def default_profile(source, reports, baseline):
             format(baseline.all if collection else mask(readers), "x"),
             fields,
         ]
+    trees = python_files(source)
     return {
         "seen": format(mask(seen), "x"),
-        "direct": format(direct_readers(source, baseline), "x"),
+        "direct": format(direct_readers(trees, baseline, SPECIAL_ATTRIBUTES), "x"),
         "functions": evidence,
+        "factory_readers": format(direct_readers(trees, baseline, FACTORY_ATTRIBUTES), "x"),
+        "factory_defaults": factory_default_profile(trees, registry_calls, metadata, baseline),
     }
