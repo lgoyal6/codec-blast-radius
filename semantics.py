@@ -186,6 +186,21 @@ class Semantics:
         imports = profile.get("import_profile", {})
         self.stable_modules = frozenset(imports.get("stable_stdlib_modules", ()))
         self.lazy_modules = imports.get("lazy_module_users", {})
+        defaults = profile.get("default_profile", {})
+        self.default_seen = int(defaults.get("seen", "0"), 16)
+        self.default_direct = int(defaults.get("direct", "0"), 16)
+        self.default_functions = defaults.get("functions", {})
+
+    def default_users(self, path, name, changed, called):
+        evidence = self.default_functions.get(f"{path}:{name}")
+        if evidence is None:
+            return None
+        observed, metadata, fields = evidence
+        keep = (called & ~(self.default_seen & int(observed, 16))) | int(metadata, 16) | self.default_direct
+        for parameter in changed:
+            keep |= int(fields.get(parameter, "0"), 16)
+        return keep
+
 
     def equivalent(self, path, lines, old, new, removed, added):
         edit = compare_edit(old, new, removed, added)

@@ -390,10 +390,14 @@ class Selector:
         if self.semantics is not None and path.startswith("sqlglot/"):
             default = default_edit(old, new, removed, added)
             if default is not None:
-                name, body = default
+                name, body, changed, may_escape = default
                 if not file.collection.intersection(body):
                     called = file.covered(body)
                     if called:
+                        if single_file and changed and not may_escape:
+                            users = self.semantics.default_users(path, name, changed, called)
+                            if users is not None:
+                                return users | file.readers, "observed-default-readers"
                         references = self.baseline.references.get(name, 0)
                         return called | references | file.readers, "observed-default"
             observed = self.observed_class_candidates(path, file, old, new, removed, added, single_file)

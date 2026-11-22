@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from selector import Baseline, REVISION, union
 from build_schema import build_schema
 from build_imports import import_profile
+from build_defaults import default_profile
 
 COLLECTION = "@collection"
 
@@ -127,7 +128,7 @@ def expression_schemas(source, baseline, reads, initialization, mask):
     return result, stable_derivation
 
 
-def build(source, coverage, reports, output, schema_reports=(), import_reports=()):
+def build(source, coverage, reports, output, schema_reports=(), import_reports=(), default_reports=()):
     revision = subprocess.check_output(
         ["git", "-C", source, "rev-parse", "HEAD"], text=True
     ).strip()
@@ -187,6 +188,7 @@ def build(source, coverage, reports, output, schema_reports=(), import_reports=(
         },
         "schemas": schemas,
         "import_profile": import_profile(source, import_reports, baseline),
+        "default_profile": default_profile(source, default_reports, baseline),
         "schema_validations": build_schema(source, schema_reports, stable_derivation, baseline),
     }
     with (
@@ -204,8 +206,9 @@ def main():
     parser.add_argument("reports", nargs="+", type=Path)
     parser.add_argument("--schema-reports", nargs="+", type=Path, default=())
     parser.add_argument("--import-reports", nargs="+", type=Path, default=())
+    parser.add_argument("--default-reports", nargs="+", type=Path, default=())
     args = parser.parse_args()
-    build(args.source, args.coverage, args.reports, args.output, args.schema_reports, args.import_reports)
+    build(args.source, args.coverage, args.reports, args.output, args.schema_reports, args.import_reports, args.default_reports)
 
 
 if __name__ == "__main__":

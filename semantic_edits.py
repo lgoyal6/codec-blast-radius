@@ -80,6 +80,19 @@ def compare_edit(old, new, removed, added):
     return None
 
 
+def argument_defaults(arguments):
+    positional = arguments.posonlyargs + arguments.args
+    pairs = zip(
+        positional[len(positional) - len(arguments.defaults) :], arguments.defaults
+    )
+    keywords = zip(arguments.kwonlyargs, arguments.kw_defaults)
+    return {
+        argument.arg: value.value
+        for argument, value in (*pairs, *keywords)
+        if isinstance(value, ast.Constant)
+    }
+
+
 def default_edit(old, new, removed, added):
     if not removed or not added:
         return None
@@ -106,13 +119,41 @@ def default_edit(old, new, removed, added):
     if first_types != last_types:
         return None
     original_defaults, original_keywords = later.args.defaults, later.args.kw_defaults
+    old_values = argument_defaults(earlier.args)
+    new_values = argument_defaults(later.args)
+    if old_values.keys() != new_values.keys():
+        return None
+    changed = tuple(
+        name for name, value in old_values.items() if value != new_values[name]
+    )
+    may_escape = any(
+        node is not earlier
+        and isinstance(
+            node,
+            (
+                ast.FunctionDef,
+                ast.AsyncFunctionDef,
+                ast.Lambda,
+                ast.Global,
+                ast.Nonlocal,
+                ast.Yield,
+                ast.YieldFrom,
+            ),
+        )
+        for node in ast.walk(earlier)
+    )
     try:
         later.args.defaults, later.args.kw_defaults = (
             earlier.args.defaults,
             earlier.args.kw_defaults,
         )
         if ast.dump(old.tree) == ast.dump(new.tree):
-            return earlier.name, range(earlier.body[0].lineno, earlier.end_lineno + 1)
+            return (
+                earlier.name,
+                range(earlier.body[0].lineno, earlier.end_lineno + 1),
+                changed,
+                may_escape,
+            )
     finally:
         later.args.defaults, later.args.kw_defaults = (
             original_defaults,

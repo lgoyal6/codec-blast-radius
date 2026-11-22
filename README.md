@@ -96,3 +96,18 @@ BLAST_IMPORTS=1 BLAST_PROFILE=/imports/stress.json python -c 'import profile_imp
 ```
 
 Add `--import-reports /imports/*.json` to the semantic profile compiler command.
+
+
+### Function defaults
+
+The baseline capture records function entries, arguments that equal the original literal defaults, and signature readers keyed by source path and qualified name. Tests covered by the original function map without a recorded entry remain selected. Collection-time reads and callables that can outlive their creator keep the broad fallback.
+
+From the pinned checkout, use a dedicated output directory and the same capture environment.
+
+```sh
+BLAST_DEFAULTS=1 BLAST_PROFILE=/defaults/main.json python -c 'import profile_defaults; raise SystemExit(profile_defaults.main())' /defaults/main.json
+BLAST_DEFAULTS=1 BLAST_PROFILE=/defaults/stress.json python -c 'import profile_defaults; raise SystemExit(profile_defaults.main())' /defaults/stress.json \
+  tests/test_parser.py::TestParser::test_max_nodes
+```
+
+Add `--default-reports /defaults/*.json` to the semantic profile compiler command.

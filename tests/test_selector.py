@@ -7,8 +7,8 @@ from types import SimpleNamespace
 
 from patches import parse_patch
 from selector import FileMap, Selector, schedule
-from semantics import same_result
-from semantic_edits import only_preloaded_imports
+from semantics import Semantics, same_result
+from semantic_edits import default_edit, only_preloaded_imports
 
 
 def patch_for(path, old, new):
@@ -115,6 +115,26 @@ class SemanticEvidenceTest(unittest.TestCase):
 
     def test_unknown_operand_prevents_pruning(self):
         self.assertFalse(same_result("?", "Is", "Eq"))
+
+    def test_default_edit_identifies_bound_parameters(self):
+        old = SimpleNamespace(tree=ast.parse("def f(a, /, b=2, *, c=3):\n    return b + c\n"))
+        new = SimpleNamespace(tree=ast.parse("def f(a, /, b=4, *, c=3):\n    return b + c\n"))
+        self.assertEqual(default_edit(old, new, {1}, {1}), ("f", range(2, 3), ("b",), False))
+
+    def test_default_readers_keep_metadata_and_unobserved_body_contexts(self):
+        profile = Semantics.__new__(Semantics)
+        profile.default_seen = 31
+        profile.default_direct = 0
+        profile.default_functions = {"sqlglot/test.py:example": ["3", "8", {"flag": "1"}]}
+        self.assertEqual(
+            profile.default_users("sqlglot/test.py", "example", ("flag",), 19),
+            25,
+        )
+
+    def test_default_edit_marks_closure_as_escaping(self):
+        old = SimpleNamespace(tree=ast.parse("def f(a=1):\n    return lambda: a\n"))
+        new = SimpleNamespace(tree=ast.parse("def f(a=2):\n    return lambda: a\n"))
+        self.assertTrue(default_edit(old, new, {1}, {1})[3])
 
     def test_preloaded_import_guard_rejects_new_dependencies_and_body_edits(self):
         old = SimpleNamespace(tree=ast.parse("x = 1"))
