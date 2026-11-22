@@ -423,7 +423,7 @@ def configuration_keys(before, after, membership_observed=False):
     return None
 
 
-def parser_dispatch_entries(value):
+def parser_dispatch_entries(value, token_keys=False):
     if not isinstance(value, ast.Dict):
         return None
     entries = {}
@@ -431,10 +431,21 @@ def parser_dispatch_entries(value):
     for key, body in zip(value.keys, value.values):
         if key is None and not entries:
             sources.append(ast.dump(body))
-        elif isinstance(key, ast.Constant) and type(key.value) is str and key.value not in entries:
-            entries[key.value] = body
+            continue
+        if token_keys:
+            if not (
+                isinstance(key, ast.Attribute) and isinstance(key.value, ast.Name)
+                and key.value.id == "TokenType"
+            ):
+                return None
+            name = key.attr
         else:
+            if not isinstance(key, ast.Constant) or type(key.value) is not str:
+                return None
+            name = key.value
+        if name in entries:
             return None
+        entries[name] = body
     return sources, entries
 
 
@@ -454,6 +465,33 @@ def parser_dispatch_keys(before, after):
             body = entries[key]
             if not isinstance(body, ast.Lambda) or body.args.defaults or any(body.args.kw_defaults):
                 return None
+    return changed
+
+
+def token_dispatch_value(node, stable_functions, existing):
+    if isinstance(node, ast.Lambda):
+        return not (node.args.defaults or any(node.args.kw_defaults))
+    return (
+        isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
+        and node.value.id == "parser" and node.attr in stable_functions
+        and ast.dump(node) in existing
+    )
+
+
+def token_dispatch_keys(before, after, stable_functions):
+    old = parser_dispatch_entries(before, token_keys=True)
+    new = parser_dispatch_entries(after, token_keys=True)
+    if old is None or new is None or old[0] != new[0] or list(old[1]) != list(new[1]):
+        return None
+    existing = {ast.dump(node) for node in old[1].values()}
+    changed = set()
+    for key, prior in old[1].items():
+        updated = new[1][key]
+        if ast.dump(prior) == ast.dump(updated):
+            continue
+        if not all(token_dispatch_value(node, stable_functions, existing) for node in (prior, updated)):
+            return None
+        changed.add(key)
     return changed
 
 
@@ -518,26 +556,40 @@ class Selector:
             and {ast.dump(key) if key else None for key in old_value.keys}
             != {ast.dump(key) if key else None for key in new_value.keys}
         )
-        dispatch = field == "FUNCTION_PARSERS" and path.startswith("sqlglot/parsers/")
+        parser_module = path.startswith("sqlglot/parsers/")
+        dispatch = field == "FUNCTION_PARSERS" and parser_module
+        table_key = f"{module}:{owner}:{field}"
+        token_dispatch = parser_module and table_key in getattr(self.semantics, "token_dispatch_keys", {})
         if dispatch:
             table = getattr(self.semantics, "parser_dispatch_keys", {})
+        elif token_dispatch:
+            table = self.semantics.token_dispatch_keys
         elif membership_changed:
             table = getattr(self.semantics, "dictionary_membership", {})
         else:
             table = self.semantics.configuration_keys
-        evidence = table.get(f"{module}:{owner}:{field}")
+        evidence = table.get(table_key)
         if evidence is None:
             return None
-        keys = (
-            parser_dispatch_keys(old_value, new_value)
-            if dispatch else configuration_keys(old_value, new_value, membership_changed)
-        )
+        key_type = "str"
+        metadata = 0
+        if dispatch:
+            keys = parser_dispatch_keys(old_value, new_value)
+        elif token_dispatch:
+            references = self.baseline.references
+            metadata = union(references.get(name, 0) for name in (
+                "__code__", "__dict__", "getmembers", "getsource", "getsourcelines", "vars",
+            ))
+            keys = token_dispatch_keys(old_value, new_value, self.semantics.token_dispatch_functions)
+            key_type = "TokenType"
+        else:
+            keys = configuration_keys(old_value, new_value, membership_changed)
         if keys is None or without_values(old.tree, [old_assignment]) != without_values(new.tree, [new_assignment]):
             return None
         whole, lookup = evidence
         direct = int(self.semantics.direct.get(field, "0"), 16)
-        return int(whole, 16) | direct | union(
-            int(lookup.get(json.dumps(["str", key], separators=(",", ":")), "0"), 16)
+        return int(whole, 16) | direct | metadata | union(
+            int(lookup.get(json.dumps([key_type, key], separators=(",", ":")), "0"), 16)
             for key in keys
         )
 

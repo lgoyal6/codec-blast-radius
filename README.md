@@ -199,3 +199,7 @@ A patch that inserts one return or raise before an unchanged statement can use t
 Parser dispatch changes can use observed lookups when a dialect's table had no whole-table readers across baseline execution. The selector admits literal-key edits to lambdas without default arguments. It keeps inherited table initializers in the same order and leaves other class initialization unchanged.
 
 For capture, use the existing configuration profile with `BLAST_CONFIG_FIELDS` pointing to a JSON array containing `FUNCTION_PARSERS`. Include the isolated parser stress test as well as the regular catalog. Build the map with `trace/build_config_keys.py --parser-dispatch --pinned-source` and the pinned checkout.
+
+For dispatch tables keyed by `TokenType`, the selector can narrow handler substitutions with the same keys and order. It accepts lambdas without defaults and references to pinned module functions already present in the table. It retains the broader selection for whole-container consumers, collection-time callbacks, unresolved providers, and changes to the dictionary structure.
+
+To capture token lookups, set `BLAST_TOKEN_DISPATCH=1` and point `BLAST_CONFIG_FIELDS` to `trace/token_dispatch_fields.json`. Run the regular catalog and isolated parser stress test separately. Pass both reports and the worker reports to `trace/build_config_keys.py --token-dispatch --pinned-source`. This profile treats dictionary truth tests and the pinned parser's token-membership helper as independent of table values.

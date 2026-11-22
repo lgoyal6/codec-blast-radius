@@ -6,7 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "trace"))
 
 from build_container_config import observe
-from selector import configuration_keys, parser_dispatch_keys
+from selector import configuration_keys, parser_dispatch_keys, token_dispatch_keys
 
 
 class ContainerConfigTest(unittest.TestCase):
@@ -57,3 +57,20 @@ class ContainerConfigTest(unittest.TestCase):
             "{**Base.FUNCTION_PARSERS, 'A': dynamic_factory()}",
         ):
             self.assertIsNone(parser_dispatch_keys(before, parse(unsafe)))
+
+    def test_token_dispatch_requires_unchanged_keys_and_safe_values(self):
+        def parse(expression):
+            return ast.parse(expression, mode="eval").body
+
+        functions = {"left", "right"}
+        before = parse("{TokenType.A: parser.left, TokenType.B: parser.right}")
+        changed = parse("{TokenType.A: parser.right, TokenType.B: parser.right}")
+        self.assertEqual(token_dispatch_keys(before, changed, functions), {"A"})
+        for unsafe in (
+            "{TokenType.A: parser.right}",
+            "{TokenType.A: parser.unknown, TokenType.B: parser.right}",
+            "{TokenType.B: parser.right, TokenType.A: parser.left}",
+            "{TokenType.A: lambda t=produce(): call(t), TokenType.B: parser.right}",
+        ):
+            with self.subTest(unsafe=unsafe):
+                self.assertIsNone(token_dispatch_keys(before, parse(unsafe), functions))

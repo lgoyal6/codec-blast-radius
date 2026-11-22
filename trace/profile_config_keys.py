@@ -12,6 +12,8 @@ import profile_runtime as runtime
 
 FIELDS_FILE = Path(os.environ.get("BLAST_CONFIG_FIELDS", Path(__file__).with_name("config_key_fields.json")))
 FIELDS = frozenset(json.loads(FIELDS_FILE.read_bytes()))
+TOKEN_DISPATCH = os.environ.get("BLAST_TOKEN_DISPATCH") == "1"
+ORIGINAL_MATCH_SET = None
 
 
 def tracked(node):
@@ -21,6 +23,18 @@ def tracked(node):
 class Inject(ast.NodeTransformer):
     def visit_Call(self, node):
         method = node.func
+        if (
+            TOKEN_DISPATCH and isinstance(method, ast.Attribute) and method.attr == "_match_set"
+            and isinstance(method.value, ast.Name) and method.value.id == "self"
+            and node.args and tracked(node.args[0])
+            and isinstance(node.args[0].value, ast.Name) and node.args[0].value.id == "self"
+        ):
+            field = node.args.pop(0)
+            node.func = ast.copy_location(ast.Call(
+                ast.Name("_blast_config_match", ast.Load()),
+                [self.visit(method), field.value, ast.Constant(field.attr)], [],
+            ), method)
+            return self.generic_visit(node)
         if isinstance(method, ast.Attribute) and method.attr == "get" and tracked(method.value):
             field = method.value
             node.func = ast.copy_location(
@@ -49,6 +63,30 @@ class Inject(ast.NodeTransformer):
         args = [self.visit(node.left), self.visit(field.value), ast.Constant(field.attr)]
         call = ast.Call(ast.Name("_blast_config_contains", ast.Load()), args, [])
         return ast.copy_location(ast.UnaryOp(ast.Not(), call) if isinstance(node.ops[0], ast.NotIn) else call, node)
+
+    def truth_check(self, node):
+        if tracked(node):
+            return ast.copy_location(ast.Call(
+                ast.Name("_blast_config_truth", ast.Load()),
+                [self.visit(node.value), ast.Constant(node.attr)], [],
+            ), node)
+        if isinstance(node, ast.BoolOp):
+            node.values = [self.truth_check(value) for value in node.values]
+            return node
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not):
+            node.operand = self.truth_check(node.operand)
+            return node
+        return self.visit(node)
+
+    def visit_If(self, node):
+        if not TOKEN_DISPATCH:
+            return self.generic_visit(node)
+        node.test = self.truth_check(node.test)
+        node.body = [self.visit(statement) for statement in node.body]
+        node.orelse = [self.visit(statement) for statement in node.orelse]
+        return node
+
+    visit_While = visit_If
 
     def visit_Attribute(self, node):
         if tracked(node):
@@ -83,7 +121,10 @@ def record(owner, container, key):
         return
     if type(container) in (tuple, list) and type(key) is int and key < 0:
         key += len(container)
-    if type(key) in (str, int):
+    if TOKEN_DISPATCH and type(key).__module__ == "sqlglot.tokenizer_core" and type(key).__qualname__ == "TokenType":
+        token = json.dumps(["TokenType", key.name], separators=(",", ":"))
+        runtime.TRACE.keys[owner][token].add(runtime.CONTEXT)
+    elif type(key) in (str, int) and not TOKEN_DISPATCH:
         token = json.dumps([type(key).__name__, key], separators=(",", ":"))
         runtime.TRACE.keys[owner][token].add(runtime.CONTEXT)
     else:
@@ -120,6 +161,26 @@ def contains(key, receiver, field):
     return key in container
 
 
+def truth(receiver, field):
+    owner, container = users(receiver, field)
+    if owner is not None and type(container) is not dict:
+        runtime.TRACE.raw[owner].add(runtime.CONTEXT)
+    return container
+
+
+def match_set(method, receiver, field):
+    owner, container = users(receiver, field)
+    if owner is not None and (
+        type(container) is not dict or getattr(method, "__func__", None) is not ORIGINAL_MATCH_SET
+    ):
+        runtime.TRACE.raw[owner].add(runtime.CONTEXT)
+
+    def match(*args, **kwargs):
+        return method(container, *args, **kwargs)
+
+    return match
+
+
 def whole(receiver, field):
     owner, container = users(receiver, field)
     if owner is not None:
@@ -133,13 +194,18 @@ class Loader(importlib.machinery.SourceFileLoader):
         return compile(ast.fix_missing_locations(Inject().visit(tree)), self.path, "exec", dont_inherit=True)
 
     def exec_module(self, module):
+        global ORIGINAL_MATCH_SET
         module.__dict__.update(
             _blast_config_get=getter,
             _blast_config_index=indexing,
             _blast_config_contains=contains,
             _blast_config_raw=whole,
+            _blast_config_match=match_set,
+            _blast_config_truth=truth,
         )
         super().exec_module(module)
+        if TOKEN_DISPATCH and module.__name__ == "sqlglot.parser":
+            ORIGINAL_MATCH_SET = module.Parser._match_set
 
 
 class Finder(importlib.abc.MetaPathFinder):
