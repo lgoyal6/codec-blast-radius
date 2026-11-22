@@ -70,7 +70,7 @@ python3 trace/build_semantics.py /src baseline.json.gz semantics.json.gz /profil
 
 ### Expression argument validation
 
-The optional schema trace runs the pinned validator and records which inputs would fail a required-argument check. It preserves any test that reached an uncertain validator state. Changes that could affect collection fall back to the existing dependency selection.
+The optional schema trace runs the pinned validator and records which inputs would fail a required-argument check. It preserves any test that reached an uncertain validator state. Collection-time schema reads may use the validator trace when they only derive required keys or check key membership. The selector keeps the broad fallback whenever a changed flag can affect collection-time diagnostics.
 
 Use separate output directories for the two capture modes. From the pinned checkout, run the schema capture with the same environment as the semantic profile.
 

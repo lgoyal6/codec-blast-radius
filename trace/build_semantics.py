@@ -84,6 +84,27 @@ def schema_derivation_sites(source):
     }
 
 
+def schema_membership_sites(source):
+    path = "sqlglot/expressions/core.py"
+    tree = ast.parse((source / path).read_bytes())
+    return {
+        f"{path}:{attribute.lineno}:{attribute.col_offset}"
+        for cls in tree.body
+        if isinstance(cls, ast.ClassDef) and cls.name == "Expression"
+        for function in cls.body
+        if isinstance(function, ast.FunctionDef) and function.name == "error_messages"
+        for node in ast.walk(function)
+        if isinstance(node, ast.Compare)
+        and len(node.ops) == 1
+        and isinstance(node.ops[0], (ast.In, ast.NotIn))
+        for attribute in node.comparators
+        if isinstance(attribute, ast.Attribute)
+        and isinstance(attribute.value, ast.Name)
+        and attribute.value.id == "self"
+        and attribute.attr == "arg_types"
+    }
+
+
 def expression_schemas(source, baseline, reads, initialization, mask):
     classes = {}
     for path in sorted((source / "sqlglot" / "expressions").glob("*.py")):
@@ -102,6 +123,7 @@ def expression_schemas(source, baseline, reads, initialization, mask):
     result = {}
     stable_derivation = set()
     derivation = schema_derivation_sites(source)
+    flag_reads = derivation | schema_membership_sites(source)
     for owner in classes:
         field = owner + ":arg_types"
         if field not in reads:
@@ -113,9 +135,11 @@ def expression_schemas(source, baseline, reads, initialization, mask):
             related.update(children)
             pending.difference_update(children)
             names.update(item.rsplit(":", 1)[1] for item in children)
-        if any(not initialization.get(item, set()) <= derivation for item in related):
+        sites = set().union(*(initialization.get(item, set()) for item in related))
+        if sites <= flag_reads:
+            stable_derivation.add(owner)
+        if not sites <= derivation:
             continue
-        stable_derivation.add(owner)
         if any(COLLECTION in reads.get(item + ":required_args", ()) for item in related):
             continue
         result[owner] = format(
