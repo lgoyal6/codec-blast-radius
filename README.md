@@ -226,3 +226,17 @@ readers, and namespace or source inspection. Collection-time observations, ident
 delimiter changes, and edits that change keys or surrounding code use the broader
 fallback. Rebuild the masks with `trace/build_escape_tables.py` using the complete
 baseline capture from `profile_escape_reads.start` and the module namespace capture.
+
+The optional parser token profile records the first token at calls to the pinned
+literal token matchers. A source edit must change only one matcher's literal
+arguments at the same location. It retains all tests with an unknown receiver,
+missing observations, or a first token that could match either version. A
+negated condition around a block of token-gated branches can use the same evidence
+when all those branches would leave parser state unchanged. Collection with a
+possible match retains the broader fallback.
+
+Capture baseline pytest processes with `profile_parser_tokens.start`, putting
+`parser_tokens.py` on the capture path and setting `BLAST_TOKEN_CATALOG` to the
+pinned catalog. Run parser stress separately and merge the master and worker JSON
+reports with `trace/build_parser_tokens.py`. The reports contain baseline token
+observations and compiler inputs only.

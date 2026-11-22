@@ -266,6 +266,11 @@ class Semantics:
         self.unread_docs = frozenset(profile.get("unread_docs", ()))
         self.module_literals = profile.get("module_literals", {})
         self.escape_tables = profile.get("escape_tables")
+        self.parser_tokens = profile.get("parser_tokens")
+        if self.parser_tokens is not None:
+            self.parser_tokens["words"] = frozenset(self.parser_tokens["words"])
+            for file in self.parser_tokens["files"].values():
+                file["lines"] = frozenset(file["lines"])
         self.unreached_calls = {path: frozenset(spans) for path, spans in profile.get("unreached_calls", {}).items()}
         self.token_dispatch_functions = frozenset(profile.get("token_dispatch_functions", ()))
         self.registry = profile["registry"]

@@ -12,6 +12,7 @@ from itertools import accumulate
 from pathlib import Path
 
 from fixture_pairs import fixture_pair_users
+from parser_tokens import affected_tests as parser_token_users
 from patches import parse_patch, split_lines
 from semantic_edits import (
     default_edit, escape_table_changes, inserted_branch_exit, module_literal_edit,
@@ -720,6 +721,24 @@ class Selector:
                 if lazy is not None and only_preloaded_imports(old, new, removed, added, stable):
                     return int(lazy, 16), "observed-lazy-import"
             return self.baseline.all, "import-change"
+
+        parser_tokens = getattr(self.semantics, "parser_tokens", None)
+        if single_file and parser_tokens and path in parser_tokens["files"]:
+            touched = parser_token_users(
+                parser_tokens, path, old.tree, new.tree, removed, added,
+            )
+            if touched is not None:
+                entered, affected = touched
+                collection = self.baseline.all + 1
+                if not affected & collection and (
+                    entered & collection or not removed.intersection(file.collection)
+                ):
+                    metadata = union(self.baseline.references.get(name, 0) for name in (
+                        "__code__", "__traceback__", "co_code", "co_consts", "co_firstlineno",
+                        "co_lines", "co_names", "co_positions", "getsource", "getsourcelines",
+                    ))
+                    uncertain = file.covered(removed) & ~entered
+                    return (affected | uncertain | metadata | file.readers), "observed-parser-token"
 
         escape_tables = getattr(self.semantics, "escape_tables", None)
         if single_file and escape_tables and path == "sqlglot/dialects/dialect.py":

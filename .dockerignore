@@ -7,3 +7,4 @@
 !semantics.json.gz
 !semantic_edits.py
 !fixture_pairs.py
+!parser_tokens.py

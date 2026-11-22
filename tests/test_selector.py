@@ -306,6 +306,24 @@ class SemanticEvidenceTest(unittest.TestCase):
             with self.subTest(source=source):
                 self.assertIsNone(escape_table_changes(old, SourceShape(source, path), {1}, {1}))
 
+    def test_token_selection_requires_an_isolated_literal_edit(self):
+        from parser_tokens import affected_tests
+
+        path = "sqlglot/parser.py"
+        old = ast.parse("def f(self):\n    return self._match(TokenType.OVER)\n")
+        new = ast.parse("def f(self):\n    return self._match(TokenType.IN)\n")
+        profile = {
+            "files": {path: {
+                "lines": {2}, "guards": {},
+                "calls": {"2:11": [1, 2, {"OVER": 3, "IN": 4}]},
+            }},
+            "types": {"OVER": "OVER", "IN": "IN"},
+            "masks": ["0", "f", "1", "2", "4"],
+        }
+        self.assertEqual(affected_tests(profile, path, old, new, {2}, {2}), (15, 7))
+        changed = ast.parse("def f(self):\n    return not self._match(TokenType.IN)\n")
+        self.assertIsNone(affected_tests(profile, path, old, changed, {2}, {2}))
+
     def test_default_edit_identifies_bound_parameters(self):
         old = SimpleNamespace(tree=ast.parse("def f(a, /, b=2, *, c=3):\n    return b + c\n"))
         new = SimpleNamespace(tree=ast.parse("def f(a, /, b=4, *, c=3):\n    return b + c\n"))
