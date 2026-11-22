@@ -317,3 +317,57 @@ def copy_toggle(old, new, removed, added):
         finally:
             alias.keywords = saved
     return (first.lineno, first.col_offset) if normalized[0] == normalized[1] else None
+
+
+
+def inserted_branch_exit(old, new, added, anchors, scope):
+    if len(anchors) != 1 or not added or old.tree.type_ignores or new.tree.type_ignores:
+        return ()
+    anchor, = anchors
+    functions = [
+        node for node in ast.walk(old.tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == scope.name.rsplit(".", 1)[-1] and node.end_lineno == scope.end
+        and node.lineno < anchor <= node.end_lineno
+    ]
+    if len(functions) != 1:
+        return ()
+    names = {
+        node.id if isinstance(node, ast.Name) else node.arg
+        for node in ast.walk(functions[0]) if isinstance(node, (ast.Name, ast.arg))
+    }
+    first, last = min(added), max(added)
+    if last - first + 1 != len(added):
+        return ()
+    for owner in ast.walk(new.tree):
+        for _, body in ast.iter_fields(owner):
+            if not isinstance(body, list):
+                continue
+            for index, (insertion, successor) in enumerate(zip(body, body[1:])):
+                if not isinstance(successor, (ast.Assign, ast.AugAssign, ast.Return, ast.Raise)):
+                    continue
+                if getattr(insertion, "lineno", None) != first or insertion.end_lineno != last:
+                    continue
+                if successor.lineno != last + 1 or successor.lineno - len(added) != anchor:
+                    continue
+                if isinstance(insertion, ast.If):
+                    if insertion.orelse or len(insertion.body) != 1:
+                        continue
+                    exit_statement, = insertion.body
+                else:
+                    exit_statement = insertion
+                if not isinstance(exit_statement, (ast.Return, ast.Raise)):
+                    continue
+                if any(isinstance(node, (ast.NamedExpr, ast.Yield, ast.YieldFrom, ast.Await,
+                                         ast.Lambda, ast.GeneratorExp, ast.ListComp,
+                                         ast.SetComp, ast.DictComp))
+                       or isinstance(node, ast.Name) and node.id not in names
+                       for node in ast.walk(insertion)):
+                    continue
+                body.pop(index)
+                try:
+                    if ast.dump(old.tree) == ast.dump(new.tree):
+                        return range(anchor, successor.end_lineno - len(added) + 1)
+                finally:
+                    body.insert(index, insertion)
+    return ()

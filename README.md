@@ -189,3 +189,7 @@ A dictionary profile built with `--dictionary-membership` also records membershi
 ### TPC fixture consumers
 
 A fixture edit that preserves the pinned pair loader can use the executor methods that consume the affected fields. The TPC-DS executor uses input SQL and execution flags. Its expected SQL remains covered through the existing optimizer readers. Literal-only input edits and `execute` flag changes keep the affected executor methods and any tests sharing an input cache key. Changes outside those guards retain the shared setup readers.
+
+### Inserted branch exits
+
+A patch that inserts one return or raise before an unchanged statement can use that statement's baseline coverage. Structural AST checks reject edits that introduce bindings or change other statements. Missing coverage and collection execution retain the whole-function fallback.
