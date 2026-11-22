@@ -7,3 +7,6 @@
 !semantics.json.gz
 !semantic_edits.py
 !fixture_pairs.py
+!executor_probe.py
+!executor_replay.py
+!executor_checkpoint.json.gz

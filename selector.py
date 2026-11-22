@@ -11,6 +11,7 @@ from functools import cache, cached_property
 from itertools import accumulate
 from pathlib import Path
 
+from executor_probe import EXECUTOR_TEST, MINIMUM_SAVINGS, ExecutorProof
 from fixture_pairs import fixture_pair_users
 from patches import parse_patch, split_lines
 from semantic_edits import (
@@ -908,6 +909,10 @@ def schedule(jobs):
     return [group for group in best if group]
 
 
+
+def schedule_cost(workers, durations):
+    return max((sum(durations[test] for test in worker) for worker in workers), default=0) + 2000 * len(workers)
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--data", type=Path, default=Path("/data"))
@@ -924,6 +929,11 @@ def main():
         semantics = Semantics(profile, REVISION, baseline.indices)
     selector = Selector(baseline, options.source, options.whole_function, semantics)
     catalog = json.loads((options.data / "tests.json").read_text())["tests"]
+    executor_number = next((test["number"] for test in catalog if test["id"] == EXECUTOR_TEST), None)
+    checkpoint = Path(__file__).with_name("executor_checkpoint.json.gz")
+    proof = None
+    if not options.whole_function and executor_number is not None and checkpoint.is_file():
+        proof = ExecutorProof(checkpoint, options.source, REVISION)
     tests = sorted(
         (
             int(test["seconds"] * 1000 + 0.5),
@@ -932,6 +942,7 @@ def main():
         )
         for test in catalog
     )[::-1]
+    durations = {number: duration for duration, number, _ in tests}
     for patch in sorted((options.data / "commits").glob("*.patch")):
         try:
             selected, reasons = selector.select(patch.read_bytes())
@@ -939,6 +950,14 @@ def main():
             selected, reasons = baseline.all, {"unreadable-patch"}
         jobs = [(duration, number) for duration, number, mask in tests if not mask or selected & mask]
         workers = schedule(jobs)
+        if proof is not None and any(executor_number in group for group in workers):
+            smaller = [(duration, number) for duration, number in jobs if number != executor_number]
+            alternative = schedule(smaller)
+            gain = schedule_cost(workers, durations) - schedule_cost(alternative, durations)
+            if gain >= MINIMUM_SAVINGS and proof.permits_omission(patch):
+                workers = alternative
+                jobs = smaller
+                reasons.add("equal-executor-output")
         print(json.dumps({"commit": patch.stem, "workers": workers}, separators=(",", ":")))
         if options.explain:
             print(f"{patch.stem} tests={len(jobs)} workers={len(workers)} {','.join(sorted(reasons))}", file=sys.stderr)

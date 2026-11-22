@@ -226,3 +226,19 @@ readers, and namespace or source inspection. Collection-time observations, ident
 delimiter changes, and edits that change keys or surrounding code use the broader
 fallback. Rebuild the masks with `trace/build_escape_tables.py` using the complete
 baseline capture from `profile_escape_reads.start` and the module namespace capture.
+
+The optional executor replay compares the pinned TPC-DS workload before omitting
+its integration test. The checkpoint contains baseline optimizer coverage per query
+and typed digests of the Python executor rows and reference SQL. The selector
+requires a verified isolated edit, sufficient scheduling savings, and a small
+affected query set. A bounded child process runs those queries with the submitted
+patch. Any mismatch, exception, or resource limit leaves the test selected.
+
+To reproduce the checkpoint, collect optimizer phase coverage around the original
+TPC-DS pytest test by loading `trace/profile_executor_phases.py` as the capture
+environment's site hook. Set `BLAST_OPTIMIZER_PHASES=1` and run the pinned checkout at
+`/src`. Collect the per-query line observations with
+`trace/capture_executor_query_lines.py` against the pinned checkout at `/baseline`.
+Use `executor_replay.replay` with all observed executing query indices and
+`PYTHONHASHSEED=0` to record the original output digests. Pass those three baseline
+reports to `trace/build_executor_checkpoint.py`.
