@@ -2,7 +2,7 @@
 
 Selects regression tests for unified diffs against SQLGlot `eb11aec4be8cb2122afe713a4816662c3f0fb2fa`. The runtime matches tests by pytest node ID and emits the test numbers supplied by the scorer.
 
-The default uses line and expression coverage for comparable edits inside a function. It widens to the whole function for insertions, deletions, and changes without direct coverage. For isolated comparison edits, baseline operand observations can show when both operators give the same result. The selector also records class attribute providers, expression schema consumers, and calls to parser registry closures, and key lookups in the tokenizer numeric escape table. It also uses function coverage for isolated literal default changes when the body is unused during collection. Uncertain edits retain the coverage and import fallbacks. Collection, import, and unsupported changes have conservative fallbacks. Worker assignment minimizes the largest load plus the per-worker charge using integer milliseconds.
+The default uses line and expression coverage for comparable edits inside a function. It widens to the whole function for insertions, deletions, and changes without direct coverage. For isolated comparison edits, baseline operand observations can show when both operators give the same result. The selector also records class attribute providers, expression schema consumers, and calls to parser registry closures, and key lookups in the tokenizer numeric escape table. It also uses function coverage for isolated literal default changes when the body is unused during collection. Uncertain edits retain the coverage and import fallbacks. Collection, import, and unsupported changes have conservative fallbacks. Fixture reads during class, module, package, or session setup include each test that shares that scope. Worker assignment minimizes the largest load plus the per-worker charge using integer milliseconds.
 
 ## Build and run
 
@@ -136,3 +136,15 @@ BLAST_COPIES=1 BLAST_PROFILE=/copies/main.json python -c 'import profile_copies;
 ```
 
 Add `--copy-reports /copies/*.json` to the semantic profile compiler command.
+
+### Shared fixture reads
+
+The fixture scope pass runs pytest setup on the pinned checkout and records files read by shared fixtures. It expands each scope to the corresponding test IDs in the public catalog. Merge those dependencies into the direct-reader map with the commands below.
+
+```bash
+selector_dir=$(pwd)
+cd /path/to/pinned-sqlglot
+python3 "$selector_dir/trace/capture_fixture_scopes.py" /path/to/tests.json /tmp/scoped-reads.json tests
+cd "$selector_dir"
+python3 trace/merge_fixture_scopes.py direct-baseline.json.gz /tmp/scoped-reads.json baseline.json.gz
+```
