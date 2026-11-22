@@ -11,6 +11,8 @@ from functools import cache
 from pathlib import Path
 
 from patches import parse_patch, split_lines
+from semantic_edits import default_edit
+from semantics import Semantics
 
 REVISION = "eb11aec4be8cb2122afe713a4816662c3f0fb2fa"
 COLLECTION_IMPORTS = (ast.Import, ast.ImportFrom)
@@ -94,7 +96,7 @@ class SourceShape(ast.NodeVisitor):
                 target = statement.target
             else:
                 continue
-            if isinstance(target, ast.Name) and target.id.isupper() and statement.value is not None:
+            if isinstance(target, ast.Name) and (target.id.isupper() or target.id == "arg_types") and statement.value is not None:
                 key = (owner, target.id)
                 if key in self.assignments:
                     self.assignments[key] = None
@@ -236,10 +238,11 @@ def class_updates(before, after, removed, added):
 
 
 class Selector:
-    def __init__(self, baseline, source, whole_function=False):
+    def __init__(self, baseline, source, whole_function=False, semantics=None):
         self.baseline = baseline
         self.source = source
         self.whole_function = whole_function
+        self.semantics = None if whole_function else semantics
 
     @cache
     def load(self, path):
@@ -267,6 +270,46 @@ class Selector:
             self.baseline.references.get(owner.split(".", 1)[0], 0) for owner, _ in members
         )
         return owners | peers | direct_references | file.imports | file.executed | file.readers
+
+    def observed_class_candidates(self, path, file, old, new, removed, added):
+        members = class_updates(old, new, removed, added)
+        if not members:
+            return None
+        unknown = self.baseline.all & ~self.semantics.seen
+        module = path.removesuffix(".py").replace("/", ".")
+        owners = union(self.baseline.owners.get(f"{module}:{owner}", 0) for owner, _ in members)
+        if path.startswith("sqlglot/expressions/") and len(members) == 1:
+            owner, name = next(iter(members))
+            value = old.assignments[(owner, name)].value
+            if (
+                name == "arg_types" and isinstance(value, ast.Dict) and value.keys
+                and all(isinstance(key, ast.Constant) and type(key.value) is str for key in value.keys)
+                and all(isinstance(item, ast.Constant) and type(item.value) is bool for item in value.values)
+            ):
+                schema = self.semantics.schema_users(path, owner)
+                if schema is not None:
+                    return schema | file.readers | (file.executed & unknown)
+        if path.startswith("sqlglot/dialects/") and len(members) == 1:
+            owner, name = next(iter(members))
+            key = (owner, name)
+            value = old.assignments[key].value
+            if name == "NUMERIC_ESCAPES" and isinstance(value, ast.Dict):
+                before = ast.literal_eval(value)
+                after = ast.literal_eval(new.assignments[key].value)
+                keys = [item for item in before if before[item] != after[item]]
+                observed = self.semantics.lookup_users(path, owner, keys)
+                if observed is not None:
+                    return observed | file.readers | (file.executed & unknown)
+        if len(path.split("/")) != 3 or path.split("/")[1] not in DIALECT_FAMILIES:
+            return None
+        if not all(
+            isinstance(old.assignments[key].value, (ast.Constant, ast.UnaryOp)) for key in members
+        ):
+            return None
+        observed = self.semantics.attribute_users(path, members)
+        if observed is not None:
+            return observed | file.readers | (unknown & (owners | file.executed))
+        return None
 
     def select_file(self, change):
         path = change.path
@@ -317,6 +360,10 @@ class Selector:
                     break
                 hits |= scoped_hits
             else:
+                if self.semantics is not None and path.startswith("sqlglot/"):
+                    same = self.semantics.equivalent(path, file.lines, old, new, removed, added)
+                    if same & hits:
+                        return (hits & ~same) | file.readers, "observed-comparison"
                 return hits | file.readers, "whole-function" if widened else "statement"
 
         if not file.collection.intersection(removed):
@@ -327,6 +374,22 @@ class Selector:
 
         if path.startswith("tests/") and file.owns and not path.endswith("/__init__.py"):
             return file.owns | file.imports | file.executed | file.readers, "test-collection"
+        if self.semantics is not None and path.startswith("sqlglot/"):
+            default = default_edit(old, new, removed, added)
+            if default is not None:
+                name, body = default
+                if not file.collection.intersection(body):
+                    called = file.covered(body)
+                    if called:
+                        references = self.baseline.references.get(name, 0)
+                        return called | references | file.readers, "observed-default"
+            observed = self.observed_class_candidates(path, file, old, new, removed, added)
+            if observed is not None:
+                return observed, "observed-class"
+            registry = self.semantics.registry_users(self, path, old, new, removed, added)
+            if registry is not None:
+                unseen = file.executed & ~self.semantics.seen
+                return registry | file.readers | unseen, "observed-registry"
         owners = self.class_candidates(path, file, old, new, removed, added)
         if owners:
             return owners, "dialect-class"
@@ -380,7 +443,11 @@ def main():
     options = parser.parse_args()
 
     baseline = Baseline(options.map)
-    selector = Selector(baseline, options.source, options.whole_function)
+    semantics = None
+    profile = options.map.with_name("semantics.json.gz")
+    if not options.whole_function and profile.is_file():
+        semantics = Semantics(profile, REVISION, baseline.indices)
+    selector = Selector(baseline, options.source, options.whole_function, semantics)
     catalog = json.loads((options.data / "tests.json").read_text())["tests"]
     tests = sorted(
         (

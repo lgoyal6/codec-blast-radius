@@ -6,6 +6,7 @@ from types import SimpleNamespace
 
 from patches import parse_patch
 from selector import FileMap, Selector, schedule
+from semantics import same_result
 
 
 def patch_for(path, old, new):
@@ -98,6 +99,20 @@ class SelectorTest(unittest.TestCase):
 
     def test_unknown_diff_falls_back(self):
         self.assertEqual(Selector(self.baseline, self.root).select(b"Binary files differ\n")[0], 15)
+
+
+class SemanticEvidenceTest(unittest.TestCase):
+    def test_identity_comparison_uses_default_object_equality(self):
+        fact = '[false,["identity",null],["NoneType",null]]'
+        self.assertTrue(same_result(fact, "Is", "Eq"))
+        self.assertFalse(same_result(fact, "Is", "NotEq"))
+
+    def test_equal_non_singletons_keep_identity_change_uncertain(self):
+        fact = '[true,["str","a"],["str","a"]]'
+        self.assertFalse(same_result(fact, "Is", "Eq"))
+
+    def test_unknown_operand_prevents_pruning(self):
+        self.assertFalse(same_result("?", "Is", "Eq"))
 
 
 class ScheduleTest(unittest.TestCase):

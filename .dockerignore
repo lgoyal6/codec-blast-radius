@@ -3,3 +3,6 @@
 !selector.py
 !patches.py
 !baseline.json.gz
+!semantics.py
+!semantics.json.gz
+!semantic_edits.py
