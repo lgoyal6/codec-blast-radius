@@ -183,6 +183,9 @@ class Semantics:
         self.schemas = profile["schemas"]
         self.schema_validations = profile.get("schema_validations", {})
         self.lookups = profile["lookups"]
+        imports = profile.get("import_profile", {})
+        self.stable_modules = frozenset(imports.get("stable_stdlib_modules", ()))
+        self.lazy_modules = imports.get("lazy_module_users", {})
 
     def equivalent(self, path, lines, old, new, removed, added):
         edit = compare_edit(old, new, removed, added)

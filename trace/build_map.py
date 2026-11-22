@@ -68,7 +68,7 @@ def python_files(source):
     }
 
 
-def import_dependents(trees, test_files):
+def static_import_graph(trees):
     modules = {
         filename.removesuffix(".py").removesuffix("/__init__").replace("/", "."): filename
         for filename in trees
@@ -79,6 +79,11 @@ def import_dependents(trees, test_files):
         imports = Imports(package, modules)
         imports.visit(tree)
         graph[path] = imports.dependencies
+    return graph
+
+
+def import_dependents(trees, test_files):
+    graph = static_import_graph(trees)
     dependents = defaultdict(int)
     for path, mask in test_files.items():
         visited = set()

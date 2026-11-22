@@ -119,3 +119,39 @@ def default_edit(old, new, removed, added):
             original_keywords,
         )
     return None
+
+
+def only_preloaded_imports(old, new, removed, added, stable_modules):
+    def stripped(tree, lines):
+        body = []
+        count = 0
+        for statement in tree.body:
+            covered = range(statement.lineno, statement.end_lineno + 1)
+            if not lines.intersection(covered) or not isinstance(
+                statement, (ast.Import, ast.ImportFrom)
+            ):
+                body.append(statement)
+                continue
+            if not lines.issuperset(covered):
+                return None
+            if isinstance(statement, ast.Import):
+                stable = all(alias.name in stable_modules for alias in statement.names)
+            else:
+                stable = (
+                    not statement.level
+                    and statement.module in stable_modules
+                    and all(alias.name != "*" for alias in statement.names)
+                )
+            if not stable:
+                return None
+            count += 1
+        return ast.dump(ast.Module(body=body, type_ignores=tree.type_ignores)), count
+
+    before = stripped(old.tree, removed)
+    after = stripped(new.tree, added)
+    return (
+        before is not None
+        and after is not None
+        and before[0] == after[0]
+        and before[1] + after[1] > 0
+    )

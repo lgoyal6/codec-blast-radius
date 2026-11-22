@@ -1,3 +1,4 @@
+import ast
 import difflib
 import tempfile
 import unittest
@@ -7,6 +8,7 @@ from types import SimpleNamespace
 from patches import parse_patch
 from selector import FileMap, Selector, schedule
 from semantics import same_result
+from semantic_edits import only_preloaded_imports
 
 
 def patch_for(path, old, new):
@@ -113,6 +115,19 @@ class SemanticEvidenceTest(unittest.TestCase):
 
     def test_unknown_operand_prevents_pruning(self):
         self.assertFalse(same_result("?", "Is", "Eq"))
+
+    def test_preloaded_import_guard_rejects_new_dependencies_and_body_edits(self):
+        old = SimpleNamespace(tree=ast.parse("x = 1"))
+        modules = {"math"}
+        for source, expected in (
+            ("from math import fabs\nx = 1", True),
+            ("from third_party import f\nx = 1", False),
+            ("from math import *\nx = 1", False),
+            ("from math import fabs\nx = 2", False),
+        ):
+            with self.subTest(source=source):
+                new = SimpleNamespace(tree=ast.parse(source))
+                self.assertEqual(only_preloaded_imports(old, new, set(), {1, 2}, modules), expected)
 
 
 class ScheduleTest(unittest.TestCase):

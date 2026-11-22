@@ -81,3 +81,18 @@ BLAST_SCHEMA=1 BLAST_PROFILE=/schema/stress.json python -c 'import profile_schem
 ```
 
 Add `--schema-reports /schema/*.json` to the semantic profile compiler command.
+
+
+### Lazy import requests
+
+The import trace records explicit project imports, cached dialect lookups, and registry enumeration. The compiler combines those observations with reverse import dependencies and class coverage. The selector narrows isolated top-level import edits in dialect modules only when the affected module was neither requested nor executed during collection and the changed imports are limited to already initialized standard library leaf modules.
+
+From the pinned checkout, use another output directory with the same capture environment.
+
+```sh
+BLAST_IMPORTS=1 BLAST_PROFILE=/imports/main.json python -c 'import profile_imports; raise SystemExit(profile_imports.main())' /imports/main.json
+BLAST_IMPORTS=1 BLAST_PROFILE=/imports/stress.json python -c 'import profile_imports; raise SystemExit(profile_imports.main())' /imports/stress.json \
+  tests/test_parser.py::TestParser::test_max_nodes
+```
+
+Add `--import-reports /imports/*.json` to the semantic profile compiler command.

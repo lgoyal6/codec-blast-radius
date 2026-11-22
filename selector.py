@@ -11,7 +11,7 @@ from functools import cache
 from pathlib import Path
 
 from patches import parse_patch, split_lines
-from semantic_edits import default_edit
+from semantic_edits import default_edit, only_preloaded_imports
 from semantics import Semantics
 
 REVISION = "eb11aec4be8cb2122afe713a4816662c3f0fb2fa"
@@ -337,6 +337,12 @@ class Selector:
         if removed & old.imports or added & new.imports:
             if path.startswith("tests/") and file.owns and not path.endswith("/__init__.py"):
                 return file.owns | file.imports | file.executed | file.readers, "test-import"
+            if single_file and self.semantics is not None:
+                lazy = self.semantics.lazy_modules.get(path)
+                if lazy is not None and only_preloaded_imports(
+                    old, new, removed, added, self.semantics.stable_modules
+                ):
+                    return int(lazy, 16), "observed-lazy-import"
             return self.baseline.all, "import-change"
 
         old_scopes = old.scopes_at(removed | anchors)
