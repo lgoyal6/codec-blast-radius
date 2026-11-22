@@ -183,3 +183,9 @@ Set `BLAST_CONFIG_KEYS=1` with the existing `BLAST_PROFILE` capture. The tracked
 The warm-import trace records which leaf modules have completed initialization before each lazy module starts loading. The selector admits a project dependency only when the same leaf was ready in the pinned baseline suite and in a fresh interpreter importing the target directly. Reverse-order collection observations can narrow that evidence further. Packages, partially initialized modules, and modules with dynamic attribute hooks are excluded.
 
 Run the baseline suite with `BLAST_WARM_MODE=full` and the trace directory on `PYTHONPATH`. Use `capture_warm_reverse.py` with the catalog at `/tests.json` for reversed collection. The cold capture imports the module names from `/trace/targets.json` in fresh interpreters. These names come from the baseline profile's `lazy_module_users` keys. Collect captures under `/reports` and rebuild the map with `trace/build_warm_imports.py`.
+
+### Parser dispatch entries
+
+Parser dispatch changes can use observed lookups when a dialect's table had no whole-table readers across baseline execution. The selector admits literal-key edits to lambdas without default arguments. It keeps inherited table initializers in the same order and leaves other class initialization unchanged.
+
+For capture, use the existing configuration profile with `BLAST_CONFIG_FIELDS` pointing to a JSON array containing `FUNCTION_PARSERS`. Include the isolated parser stress test as well as the regular catalog. Build the map with `trace/build_config_keys.py --parser-dispatch --pinned-source` and the pinned checkout.

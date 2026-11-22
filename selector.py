@@ -416,6 +416,40 @@ def configuration_keys(before, after):
     return None
 
 
+def parser_dispatch_entries(value):
+    if not isinstance(value, ast.Dict):
+        return None
+    entries = {}
+    sources = []
+    for key, body in zip(value.keys, value.values):
+        if key is None and not entries:
+            sources.append(ast.dump(body))
+        elif isinstance(key, ast.Constant) and type(key.value) is str and key.value not in entries:
+            entries[key.value] = body
+        else:
+            return None
+    return sources, entries
+
+
+def parser_dispatch_keys(before, after):
+    old, new = parser_dispatch_entries(before), parser_dispatch_entries(after)
+    if old is None or new is None or old[0] != new[0]:
+        return None
+    old_entries, new_entries = old[1], new[1]
+    shared = old_entries.keys() & new_entries.keys()
+    if [key for key in old_entries if key in shared] != [key for key in new_entries if key in shared]:
+        return None
+    changed = (old_entries.keys() ^ new_entries.keys()) | {
+        key for key in shared if ast.dump(old_entries[key]) != ast.dump(new_entries[key])
+    }
+    for entries in (old_entries, new_entries):
+        for key in changed & entries.keys():
+            body = entries[key]
+            if not isinstance(body, ast.Lambda) or body.args.defaults or any(body.args.kw_defaults):
+                return None
+    return changed
+
+
 class Selector:
     def __init__(self, baseline, source, whole_function=False, semantics=None):
         self.baseline = baseline
@@ -470,11 +504,17 @@ class Selector:
             return None
         owner, field = next(iter(before))
         module = path.removesuffix(".py").replace("/", ".")
-        evidence = self.semantics.configuration_keys.get(f"{module}:{owner}:{field}")
+        dispatch = field == "FUNCTION_PARSERS" and path.startswith("sqlglot/parsers/")
+        key_profile = (
+            getattr(self.semantics, "parser_dispatch_keys", {})
+            if dispatch else self.semantics.configuration_keys
+        )
+        evidence = key_profile.get(f"{module}:{owner}:{field}")
         if evidence is None:
             return None
         old_assignment, new_assignment = before[(owner, field)], after[(owner, field)]
-        keys = configuration_keys(old_assignment.value, new_assignment.value)
+        changed_keys = parser_dispatch_keys if dispatch else configuration_keys
+        keys = changed_keys(old_assignment.value, new_assignment.value)
         if keys is None or without_values(old.tree, [old_assignment]) != without_values(new.tree, [new_assignment]):
             return None
         whole, lookup = evidence
