@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from patches import parse_patch
-from selector import FileMap, LineSourceShape, Selector, SourceShape, optional_schema_edit, schedule
+from selector import FileMap, LineSourceShape, Selector, SourceShape, schema_key_edit, schedule
 from semantics import Semantics, same_result
 from semantic_edits import compare_edit, copy_toggle, default_edit, only_preloaded_imports, operator_only
 
@@ -86,16 +86,17 @@ class SelectorTest(unittest.TestCase):
         self.assertEqual(Selector(self.baseline, self.root).select(patch), (3, {"statement"}))
         self.assertEqual(Selector(self.baseline, self.root, whole_function=True).select(patch), (7, {"whole-function"}))
 
-    def test_optional_schema_changes_preserve_shared_keys_and_required_status(self):
+    def test_schema_key_changes_preserve_shared_keys_and_required_status(self):
         before = {"first": True, "second": False, "third": True}
-        self.assertTrue(optional_schema_edit(before, {"first": True, "third": True}))
-        self.assertTrue(optional_schema_edit(before, {**before, "new": False}))
+        self.assertTrue(schema_key_edit(before, {"first": True, "third": True}))
+        self.assertTrue(schema_key_edit(before, {**before, "new": False}))
+        self.assertTrue(schema_key_edit(before, {**before, "missing": True}))
+        self.assertTrue(schema_key_edit(before, {"second": False, "third": True}))
         for updated in (
             {"first": True, "third": False},
             {"third": True, "first": True},
-            {**before, "missing": True},
         ):
-            self.assertFalse(optional_schema_edit(before, updated))
+            self.assertFalse(schema_key_edit(before, updated))
 
     def test_insertion_covers_whole_function(self):
         patch = patch_for(self.path, self.source, self.source.replace("    if (", "    return -1\n    if ("))
