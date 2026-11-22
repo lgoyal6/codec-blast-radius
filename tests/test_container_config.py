@@ -6,6 +6,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "trace"))
 
 from build_container_config import observe
+from selector import configuration_keys
 
 
 class ContainerConfigTest(unittest.TestCase):
@@ -21,3 +22,12 @@ class ContainerConfigTest(unittest.TestCase):
         ):
             with self.subTest(other=other):
                 self.assertEqual(observe([tree, ast.parse(other)]), [])
+
+    def test_key_edits_use_set_membership_and_preserve_dictionary_shape(self):
+        def parse(expression):
+            return ast.parse(expression, mode="eval").body
+
+        self.assertEqual(configuration_keys(parse("{'a', 'b'}"), parse("{'b', 'c'}")), {"a", "c"})
+        self.assertEqual(configuration_keys(parse("{'a': 1, 'b': 2}"), parse("{'a': 3, 'b': 2}")), {"a"})
+        self.assertIsNone(configuration_keys(parse("{'a': 1}"), parse("{'b': 1}")))
+        self.assertIsNone(configuration_keys(parse("{'a'}"), parse("{'a', value}")))

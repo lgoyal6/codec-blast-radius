@@ -345,24 +345,25 @@ def optional_schema_edit(before, after):
     )
 
 
+def touched_assignments(source, positions):
+    members = {}
+    accounted = set()
+    for key, node in source.assignments.items():
+        if node is None:
+            continue
+        covered = set(range(node.value.lineno, node.value.end_lineno + 1)) & positions
+        if covered:
+            members[key] = node
+            accounted.update(covered)
+    return members if accounted == positions else None
+
+
 def class_updates(before, after, removed, added, enum_options=None, schema_keys=False):
     if not removed or not added:
         return ()
-    matched = []
-    for source, positions in ((before, removed), (after, added)):
-        members = {}
-        accounted = set()
-        for key, node in source.assignments.items():
-            if node is None:
-                continue
-            covered = set(range(node.value.lineno, node.value.end_lineno + 1)) & positions
-            if covered:
-                members[key] = node
-                accounted.update(covered)
-        if accounted != positions:
-            return ()
-        matched.append(members)
-    earlier, later = matched
+    earlier, later = touched_assignments(before, removed), touched_assignments(after, added)
+    if earlier is None or later is None:
+        return ()
     if earlier.keys() != later.keys():
         return ()
     try:
@@ -389,6 +390,30 @@ def class_updates(before, after, removed, added, enum_options=None, schema_keys=
     if without_values(before.tree, list(earlier.values())) != without_values(after.tree, list(later.values())):
         return ()
     return earlier.keys()
+
+
+def configuration_keys(before, after):
+    if isinstance(before, ast.Set) and isinstance(after, ast.Set):
+        values = [node.elts for node in (before, after)]
+        if all(isinstance(item, ast.Constant) and type(item.value) is str for items in values for item in items):
+            old, new = ({item.value for item in items} for items in values)
+            return old ^ new
+    if isinstance(before, ast.Dict) and isinstance(after, ast.Dict):
+        if not all(isinstance(key, ast.Constant) and type(key.value) is str for node in (before, after) for key in node.keys):
+            return None
+        old, new = ([key.value for key in node.keys] for node in (before, after))
+        if old != new or len(old) != len(set(old)):
+            return None
+        try:
+            if literal_shape(ast.literal_eval(before)) != literal_shape(ast.literal_eval(after)):
+                return None
+        except (TypeError, ValueError, OverflowError):
+            return None
+        return {
+            key for key, a, b in zip(old, before.values, after.values)
+            if ast.dump(a) != ast.dump(b)
+        }
+    return None
 
 
 class Selector:
@@ -428,6 +453,36 @@ class Selector:
             self.baseline.references.get(owner.split(".", 1)[0], 0) for owner, _ in members
         )
         return owners | peers | direct_references | file.imports | file.executed | file.readers
+
+    def keyed_class_candidates(self, path, old, new, removed, added):
+        if not getattr(self.semantics, "configuration_keys", None):
+            return None
+        parts = path.split("/")
+        if len(parts) != 3 or parts[1] not in DIALECT_FAMILIES:
+            return None
+        if not removed or not added:
+            changed = removed or added
+            if not changed or max(changed) - min(changed) + 1 != len(changed):
+                return None
+            removed, added = removed or {min(changed)}, added or {min(changed)}
+        before, after = touched_assignments(old, removed), touched_assignments(new, added)
+        if not before or not after or len(before) != 1 or before.keys() != after.keys():
+            return None
+        owner, field = next(iter(before))
+        module = path.removesuffix(".py").replace("/", ".")
+        evidence = self.semantics.configuration_keys.get(f"{module}:{owner}:{field}")
+        if evidence is None:
+            return None
+        old_assignment, new_assignment = before[(owner, field)], after[(owner, field)]
+        keys = configuration_keys(old_assignment.value, new_assignment.value)
+        if keys is None or without_values(old.tree, [old_assignment]) != without_values(new.tree, [new_assignment]):
+            return None
+        whole, lookup = evidence
+        direct = int(self.semantics.direct.get(field, "0"), 16)
+        return int(whole, 16) | direct | union(
+            int(lookup.get(json.dumps(["str", key], separators=(",", ":")), "0"), 16)
+            for key in keys
+        )
 
     def observed_class_candidates(self, path, file, old, new, removed, added, single_file):
         options = self.semantics.enum_fields.get(path, {}) if single_file else {}
@@ -627,6 +682,10 @@ class Selector:
         if isinstance(new, LineSourceShape):
             new = SourceShape(after, path, tree=new.tree)
         if semantic_source:
+            if single_file:
+                keyed = self.keyed_class_candidates(path, old, new, removed, added)
+                if keyed is not None:
+                    return keyed | file.readers, "observed-configuration-keys"
             observed = self.observed_class_candidates(path, file, old, new, removed, added, single_file)
             if observed is not None:
                 return observed, "observed-class"

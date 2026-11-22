@@ -173,3 +173,7 @@ Set `BLAST_MODULES=1` in the baseline trace environment. Combine the full-catalo
 Literal class containers can use their baseline attribute readers when static analysis finds only read-only runtime access. The trace builder excludes initialization helpers and aliasing accesses.
 
 Expression schema edits that add or remove optional keys can use existing schema readers when the class has no collection-time consumers of the mapping beyond deriving required keys. The selector preserves the relative order and required status of each shared key.
+
+For read-only configuration fields, the selector can match a changed string key to its baseline lookup and membership observations. It keeps whole-container readers and tests with unresolved observations. A dictionary edit must preserve the key order and value types. A set edit must preserve a literal string set.
+
+Set `BLAST_CONFIG_KEYS=1` with the existing `BLAST_PROFILE` capture. The tracked fields are listed in `trace/config_key_fields.json`. Merge the main and worker reports with `trace/build_config_keys.py`.
