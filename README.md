@@ -98,6 +98,8 @@ BLAST_IMPORTS=1 BLAST_PROFILE=/imports/stress.json python -c 'import profile_imp
 Add `--import-reports /imports/*.json` to the semantic profile compiler command.
 
 
+For compatible one-line comparison edits, the selector can verify a literal or operator change from the original source byte ranges. It uses the whole syntax tree whenever that exact check cannot establish the edit.
+
 ### Function defaults
 
 The baseline capture records function entries, arguments that equal the original literal defaults, and signature readers keyed by source path and qualified name. Tests covered by the original function map without a recorded entry remain selected. Collection-time reads and callables that can outlive their creator keep the broad fallback.

@@ -6,9 +6,9 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from patches import parse_patch
-from selector import FileMap, Selector, schedule
+from selector import FileMap, Selector, SourceShape, schedule
 from semantics import Semantics, same_result
-from semantic_edits import default_edit, only_preloaded_imports
+from semantic_edits import compare_edit, default_edit, only_preloaded_imports, operator_only
 
 
 def patch_for(path, old, new):
@@ -115,6 +115,21 @@ class SemanticEvidenceTest(unittest.TestCase):
 
     def test_unknown_operand_prevents_pruning(self):
         self.assertFalse(same_result("?", "Is", "Eq"))
+
+    def test_operator_fast_path_requires_the_rest_of_the_file_to_match(self):
+        build = lambda text: SourceShape(text, "sqlglot/test.py")
+        old = build(b"if value is None:\n    result = 1\n")
+        new = build(b"if value == None:\n    result = 1\n")
+        mixed = build(b"if value == None:\n    result = 2\n")
+        self.assertTrue(operator_only(old, new, old.comparisons[0], new.comparisons[0], "Is", "Eq"))
+        self.assertFalse(operator_only(old, mixed, old.comparisons[0], mixed.comparisons[0], "Is", "Eq"))
+        self.assertIsNone(compare_edit(old, mixed, {1}, {1}))
+
+    def test_operator_equivalence_falls_back_for_parentheses_and_encoding(self):
+        old = SourceShape(b"# coding: latin-1\nif (value) is None:\n    result = 1\n", "sqlglot/test.py")
+        new = SourceShape(b"# coding: latin-1\nif (value) == None:\n    result = 1\n", "sqlglot/test.py")
+        self.assertFalse(operator_only(old, new, old.comparisons[0], new.comparisons[0], "Is", "Eq"))
+        self.assertEqual(compare_edit(old, new, {2}, {2})[:4], (2, 3, "Is", "Eq"))
 
     def test_default_edit_identifies_bound_parameters(self):
         old = SimpleNamespace(tree=ast.parse("def f(a, /, b=2, *, c=3):\n    return b + c\n"))

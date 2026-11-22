@@ -39,19 +39,69 @@ def comparable_literal(node):
     )
 
 
+OPERATOR_TOKENS = {
+    "Eq": [b"=="],
+    "NotEq": [b"!="],
+    "Is": [b"is"],
+    "IsNot": [b"is", b"not"],
+    "Lt": [b"<"],
+    "LtE": [b"<="],
+    "Gt": [b">"],
+    "GtE": [b">="],
+}
+
+
+def equal_outside_spans(old, new, old_span, new_span):
+    if old_span is None or new_span is None:
+        return False
+    start, end = old_span
+    latest_start, latest_end = new_span
+    return (
+        start == latest_start
+        and old.source[:start] == new.source[:latest_start]
+        and old.source[end:] == new.source[latest_end:]
+    )
+
+
+def operator_only(old, new, earlier, later, before, after):
+    spans = []
+    for shape, node, operator in ((old, earlier, before), (new, later, after)):
+        first, last = node.left, node.comparators[0]
+        if not first.end_lineno == last.lineno == node.lineno == node.end_lineno:
+            return False
+        if first.end_col_offset >= last.col_offset:
+            return False
+        span = shape.ascii_span(node.lineno, first.end_col_offset, last.col_offset)
+        if span is None or shape.source[span[0]:span[1]].split() != OPERATOR_TOKENS[operator]:
+            return False
+        spans.append(span)
+    return equal_outside_spans(old, new, *spans)
+
+
+def literal_only(old, new, first, last):
+    if not (
+        isinstance(first, ast.Constant) and isinstance(last, ast.Constant)
+        and first.lineno == first.end_lineno == last.lineno == last.end_lineno
+    ):
+        return False
+    first_span = old.ascii_span(first.lineno, first.col_offset, first.end_col_offset)
+    last_span = new.ascii_span(last.lineno, last.col_offset, last.end_col_offset)
+    return equal_outside_spans(old, new, first_span, last_span)
+
+
 def compare_edit(old, new, removed, added):
     if not removed or not added:
         return None
     matches = []
     for shape, lines in ((old, removed), (new, added)):
+        first_line, last_line = min(lines), max(lines)
         nodes = [
             node
-            for node in ast.walk(shape.tree)
-            if isinstance(node, ast.Compare)
-            and len(node.ops) == 1
+            for node in shape.comparisons
+            if len(node.ops) == 1
             and type(node.ops[0]).__name__ in COMPARISONS
-            and min(lines) >= node.lineno
-            and max(lines) <= node.end_lineno
+            and node.lineno <= first_line
+            and last_line <= node.end_lineno
         ]
         if len(nodes) != 1:
             return None
@@ -69,8 +119,12 @@ def compare_edit(old, new, removed, added):
         initial, replacement = ast.literal_eval(first), ast.literal_eval(last)
         if type(initial) is not type(replacement) or initial == replacement:
             return None
+        if literal_only(old, new, first, last):
+            return earlier.lineno, earlier.col_offset, before, after, replacement
         later.comparators = earlier.comparators
     else:
+        if operator_only(old, new, earlier, later, before, after):
+            return earlier.lineno, earlier.col_offset, before, after, replacement
         later.ops = earlier.ops
     try:
         if ast.dump(old.tree) == ast.dump(new.tree):

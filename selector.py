@@ -7,7 +7,8 @@ import json
 import re
 import sys
 from dataclasses import dataclass
-from functools import cache
+from functools import cache, cached_property
+from itertools import accumulate
 from pathlib import Path
 
 from patches import parse_patch, split_lines
@@ -76,6 +77,7 @@ class Function:
 
 class SourceShape(ast.NodeVisitor):
     def __init__(self, source, filename):
+        self.source = source
         self.tree = ast.parse(source, filename=filename, type_comments=True)
         self.parents = []
         self.functions = []
@@ -83,9 +85,33 @@ class SourceShape(ast.NodeVisitor):
         self.imports = set()
         self.definition_lines = set()
         self.expressions = []
+        self.comparisons = []
         self.lambda_bodies = []
         self.visit(self.tree)
         self.functions.sort(key=lambda scope: scope.end - scope.start)
+
+    @cached_property
+    def source_offsets(self):
+        if self.source.startswith(b"\xef\xbb\xbf") or b"\r" in self.source:
+            return ()
+        rows = split_lines(self.source)
+        if any(re.match(rb"^[ \t\f]*#.*coding[:=]", row) for row in rows[:2]):
+            return ()
+        return tuple(accumulate(map(len, rows), initial=0))
+
+    def ascii_span(self, line, start_column, end_column):
+        offsets = self.source_offsets
+        if not 1 <= line < len(offsets):
+            return None
+        start, end = offsets[line - 1], offsets[line]
+        if end_column > end - start or not self.source[start:end].isascii():
+            return None
+        return start + start_column, start + end_column
+
+    def visit(self, node):
+        if not node._fields or type(node) in (ast.Name, ast.Constant):
+            return None
+        return super().visit(node)
 
     def visit_ClassDef(self, node):
         owner = ".".join([*self.parents, node.name])
@@ -137,6 +163,8 @@ class SourceShape(ast.NodeVisitor):
             self.imports.update(range(node.lineno, node.end_lineno + 1))
         if isinstance(node, EXPRESSION_ROOTS):
             self.expressions.append(range(node.lineno, node.end_lineno + 1))
+        if isinstance(node, ast.Compare):
+            self.comparisons.append(node)
         super().generic_visit(node)
 
     def scopes_at(self, lines):
