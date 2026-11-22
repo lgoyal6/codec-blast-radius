@@ -263,6 +263,7 @@ class Semantics:
         self.parser_dispatch_keys = profile.get("parser_dispatch_keys", {})
         self.token_dispatch_keys = profile.get("token_dispatch_keys", {})
         self.class_namespace_users = profile.get("class_namespace_users", {})
+        self.unread_docs = frozenset(profile.get("unread_docs", ()))
         self.unreached_calls = {path: frozenset(spans) for path, spans in profile.get("unreached_calls", {}).items()}
         self.token_dispatch_functions = frozenset(profile.get("token_dispatch_functions", ()))
         self.registry = profile["registry"]

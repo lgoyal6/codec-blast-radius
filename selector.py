@@ -678,6 +678,10 @@ class Selector:
             return self.baseline.all, "added-file"
         file = self.baseline.files.get(path)
         if file is None:
+            if single_file and path in getattr(self.semantics, "unread_docs", ()):
+                updated, *_ = change.apply(self.load(path))
+                updated.decode("utf-8")
+                return 0, "unread-documentation"
             return self.baseline.all, "unmapped-file"
         before = self.load(path)
         after, removed, added, anchors = change.apply(before)

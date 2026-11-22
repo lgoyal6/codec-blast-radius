@@ -9,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "trace"))
 
 from build_container_config import observe
 from build_reflection import compile_masks
-from selector import configuration_keys, parser_dispatch_keys, token_dispatch_keys
+from selector import Selector, configuration_keys, parser_dispatch_keys, token_dispatch_keys
 from semantic_edits import unreached_call_edit
 
 
@@ -125,3 +125,16 @@ class ContainerConfigTest(unittest.TestCase):
         ):
             with self.subTest(source=source):
                 self.assertFalse(edit(source))
+
+    def test_documentation_profile_requires_the_original_file_and_a_valid_patch(self):
+        index = SimpleNamespace(files={}, all=7)
+        observations = SimpleNamespace(unread_docs={"README.md"})
+        patch = b"--- a/README.md\n+++ b/README.md\n@@ -1 +1 @@\n-before\n+after\n"
+        with TemporaryDirectory() as folder:
+            source = Path(folder)
+            (source / "README.md").write_text("before\n")
+            selector = Selector(index, source, semantics=observations)
+            whole = Selector(index, source, whole_function=True, semantics=observations)
+            self.assertEqual(selector.select(patch), (0, {"unread-documentation"}))
+            self.assertEqual(selector.select(patch.replace(b"-before", b"-other")), (7, {"unsupported-patch"}))
+            self.assertEqual(whole.select(patch), (7, {"unmapped-file"}))
