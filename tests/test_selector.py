@@ -95,6 +95,28 @@ class SelectorTest(unittest.TestCase):
         header_patch = patch_for(self.path, text, text.replace("'k'", "'j'"))
         self.assertEqual(Selector(self.baseline, self.root).select(header_patch)[0], 15)
 
+    def test_enum_config_uses_observed_readers_only_for_known_members(self):
+        path = "sqlglot/dialects/example.py"
+        file = self.root / path
+        file.parent.mkdir()
+        before = "class Example:\n    MODE = Strategy.ORIGINAL\n"
+        file.write_text(before)
+        self.baseline.files[path] = FileMap({}, {1, 2}, 15, 4, 0, 8)
+        profile = Semantics.__new__(Semantics)
+        profile.seen = 7
+        profile.enum_fields = {path: {"Example:MODE": ["Strategy", ["ORIGINAL", "OTHER"]]}}
+        profile.attributes = {"sqlglot.dialects.example:Example:MODE": "1"}
+        profile.direct = {"MODE": "2"}
+        selector = Selector(self.baseline, self.root, semantics=profile)
+        good = patch_for(path, before, before.replace("Strategy.ORIGINAL", "Strategy.OTHER"))
+        self.assertEqual(selector.select(good), (15, {"observed-class"}))
+        self.baseline.files[path].executed = 0
+        self.assertEqual(selector.select(good), (7, {"observed-class"}))
+        for replacement in ("Strategy.MISSING", "OtherStrategy.OTHER"):
+            with self.subTest(replacement=replacement):
+                patch = patch_for(path, before, before.replace("Strategy.ORIGINAL", replacement))
+                self.assertEqual(selector.select(patch), (15, {"definition-or-collection"}))
+
     def test_compile_error_uses_fallback(self):
         patch = patch_for(self.path, self.source, self.source.replace("        return 1", "        break"))
         self.assertEqual(Selector(self.baseline, self.root).select(patch), (15, {"unsupported-patch"}))

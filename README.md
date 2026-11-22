@@ -50,7 +50,7 @@ python3 trace/build_map.py /src /coverage "$KIT/sample/tests.json" baseline.json
 
 ### Semantic profile
 
-`semantics.json.gz` contains observations from the same unmodified SQLGlot revision. The capture records operands, attribute providers, registry callbacks, and tokenizer table lookups during the baseline test suite. It takes test IDs from the coverage map. It does not use patches or failure labels.
+`semantics.json.gz` contains observations from the same unmodified SQLGlot revision. The capture records operands, attribute providers, registry callbacks, and tokenizer table lookups during the baseline test suite. The compiler imports the pinned SQLGlot checkout to verify enum options for observed dialect configuration fields. Isolated edits between verified members of the same enum can use the recorded attribute readers. Unknown members and collection-time or indirect source reads retain the broad fallback. It takes test IDs from the coverage map. It does not use patches or failure labels.
 
 From the pinned checkout at `/src`, add the entry repository's `trace/` directory to `PYTHONPATH`. Use the same locked test environment as the coverage pass.
 

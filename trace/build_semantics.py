@@ -14,6 +14,7 @@ from selector import Baseline, REVISION, union
 from build_schema import build_schema
 from build_imports import import_profile
 from build_defaults import default_profile
+from build_enum_fields import enum_field_options
 
 COLLECTION = "@collection"
 
@@ -177,6 +178,7 @@ def build(source, coverage, reports, output, schema_reports=(), import_reports=(
             if COLLECTION not in tests
         },
         "direct": direct_test_attributes(source, baseline),
+        "enum_fields": enum_field_options(source, reads),
         "lookups": {
             owner: {
                 key: "collection"

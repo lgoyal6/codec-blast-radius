@@ -231,7 +231,7 @@ def deferred_lambda(old, new, removed, added):
     return ()
 
 
-def class_updates(before, after, removed, added):
+def class_updates(before, after, removed, added, enum_options=None):
     if not removed or not added:
         return ()
     matched = []
@@ -252,12 +252,20 @@ def class_updates(before, after, removed, added):
     if earlier.keys() != later.keys():
         return ()
     try:
-        if any(
-            literal_shape(ast.literal_eval(node.value))
-            != literal_shape(ast.literal_eval(later[key].value))
-            for key, node in earlier.items()
-        ):
-            return ()
+        for key, node in earlier.items():
+            values = (node.value, later[key].value)
+            known = enum_options.get(":".join(key)) if enum_options else None
+            if known and all(isinstance(value, ast.Attribute) for value in values):
+                enum_name, allowed = known
+                if not all(
+                    isinstance(value.value, ast.Name)
+                    and value.value.id == enum_name
+                    and value.attr in allowed
+                    for value in values
+                ):
+                    return ()
+            elif literal_shape(ast.literal_eval(values[0])) != literal_shape(ast.literal_eval(values[1])):
+                return ()
     except (TypeError, ValueError, OverflowError):
         return ()
     if without_values(before.tree, list(earlier.values())) != without_values(after.tree, list(later.values())):
@@ -300,7 +308,8 @@ class Selector:
         return owners | peers | direct_references | file.imports | file.executed | file.readers
 
     def observed_class_candidates(self, path, file, old, new, removed, added, single_file):
-        members = class_updates(old, new, removed, added)
+        options = self.semantics.enum_fields.get(path, {}) if single_file else {}
+        members = class_updates(old, new, removed, added, options)
         if not members:
             return None
         unknown = self.baseline.all & ~self.semantics.seen
@@ -338,7 +347,9 @@ class Selector:
         if len(path.split("/")) != 3 or path.split("/")[1] not in DIALECT_FAMILIES:
             return None
         if not all(
-            isinstance(old.assignments[key].value, (ast.Constant, ast.UnaryOp)) for key in members
+            isinstance(old.assignments[key].value, (ast.Constant, ast.UnaryOp))
+            or ":".join(key) in options
+            for key in members
         ):
             return None
         observed = self.semantics.attribute_users(path, members)

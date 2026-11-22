@@ -178,6 +178,7 @@ class Semantics:
         self.seen = int(profile["seen"], 16)
         self.operands = profile["operands"]
         self.attributes = profile["attributes"]
+        self.enum_fields = profile.get("enum_fields", {})
         self.registry = profile["registry"]
         self.direct = profile["direct"]
         self.schemas = profile["schemas"]
