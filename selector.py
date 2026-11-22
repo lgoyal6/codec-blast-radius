@@ -319,10 +319,11 @@ def class_updates(before, after, removed, added, enum_options=None):
 
 
 class Selector:
-    def __init__(self, baseline, source, whole_function=False, semantics=None):
+    def __init__(self, baseline, source, whole_function=False, semantics=None, guard_body=False):
         self.baseline = baseline
         self.source = source
         self.whole_function = whole_function
+        self.guard_body = guard_body
         self.semantics = None if whole_function else semantics
 
     @cache
@@ -480,6 +481,11 @@ class Selector:
                     same = self.semantics.equivalent(path, file.lines, old, new, removed, added)
                     if same & hits:
                         return (hits & ~same) | file.readers, "observed-comparison"
+                if self.guard_body and not whole:
+                    body_lines = {line for scope in old_scopes for line in scope.lines}
+                    if file.collection.intersection(body_lines):
+                        return self.baseline.all, "recall-collection"
+                    return hits | file.covered(body_lines) | file.readers, "recall-function"
                 return hits | file.readers, "whole-function" if widened else "statement"
 
         if not file.collection.intersection(removed):
@@ -578,7 +584,7 @@ def main():
     profile = options.map.with_name("semantics.json.gz")
     if not options.whole_function and profile.is_file():
         semantics = Semantics(profile, REVISION, baseline.indices)
-    selector = Selector(baseline, options.source, options.whole_function, semantics)
+    selector = Selector(baseline, options.source, options.whole_function, semantics, guard_body=True)
     catalog = json.loads((options.data / "tests.json").read_text())["tests"]
     tests = sorted(
         (

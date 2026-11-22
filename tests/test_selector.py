@@ -74,6 +74,11 @@ class SelectorTest(unittest.TestCase):
         self.assertEqual(Selector(self.baseline, self.root).select(patch), (3, {"statement"}))
         self.assertEqual(Selector(self.baseline, self.root, whole_function=True).select(patch), (7, {"whole-function"}))
 
+    def test_recall_guard_widens_remaining_statement_edits(self):
+        patch = patch_for(self.path, self.source, self.source.replace("and b", "or b"))
+        guarded = Selector(self.baseline, self.root, guard_body=True)
+        self.assertEqual(guarded.select(patch), (7, {"recall-function"}))
+
     def test_insertion_covers_whole_function(self):
         patch = patch_for(self.path, self.source, self.source.replace("    if (", "    return -1\n    if ("))
         self.assertEqual(Selector(self.baseline, self.root).select(patch), (7, {"whole-function"}))
