@@ -257,6 +257,7 @@ class Semantics:
         self.operands = profile["operands"]
         self.attributes = profile["attributes"]
         self.enum_fields = profile.get("enum_fields", {})
+        self.literal_containers = frozenset(profile.get("runtime_literal_containers", ()))
         self.registry = profile["registry"]
         additions = profile.get("added_module_profile", {})
         self.added_modules = (

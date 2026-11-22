@@ -166,3 +166,10 @@ The fixture-pair selector can narrow read-only expected-query edits when the inp
 The root package pass records import requests, file lookups, and package enumeration on the pinned baseline. A single newly created root module with only an optional docstring and literal assignments can use that evidence when its name has no observed lookup. Tests that may enumerate the package remain eligible.
 
 Set `BLAST_MODULES=1` in the baseline trace environment. Combine the full-catalog main and worker reports with `trace/build_added_modules.py`.
+
+
+### Class configuration dependencies
+
+Literal class containers can use their baseline attribute readers when static analysis finds only read-only runtime access. The trace builder excludes initialization helpers and aliasing accesses.
+
+Expression schema edits that add or remove optional keys can use existing schema readers when the class has no collection-time consumers of the mapping beyond deriving required keys. The selector preserves the relative order and required status of each shared key.

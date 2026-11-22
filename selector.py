@@ -472,9 +472,14 @@ class Selector:
                     return observed | file.readers | (file.executed & unknown)
         if len(path.split("/")) != 3 or path.split("/")[1] not in DIALECT_FAMILIES:
             return None
+        containers = getattr(self.semantics, "literal_containers", ())
         if not all(
             isinstance(old.assignments[key].value, (ast.Constant, ast.UnaryOp))
             or ":".join(key) in options
+            or (
+                key[1] in containers
+                and isinstance(old.assignments[key].value, (ast.Dict, ast.List, ast.Tuple))
+            )
             for key in members
         ):
             return None
