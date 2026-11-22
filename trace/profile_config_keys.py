@@ -111,9 +111,7 @@ def indexing(receiver, field):
 
 def contains(key, receiver, field):
     owner, container = users(receiver, field)
-    if type(container) is dict:
-        return key in container
-    if type(container) is set:
+    if type(container) in (dict, set):
         record(owner, container, key)
     elif owner is not None:
         runtime.TRACE.raw[owner].add(runtime.CONTEXT)

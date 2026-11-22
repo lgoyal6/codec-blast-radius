@@ -259,6 +259,7 @@ class Semantics:
         self.enum_fields = profile.get("enum_fields", {})
         self.literal_containers = frozenset(profile.get("runtime_literal_containers", ()))
         self.configuration_keys = profile.get("configuration_keys", {})
+        self.dictionary_membership = profile.get("dictionary_membership", {})
         self.registry = profile["registry"]
         additions = profile.get("added_module_profile", {})
         self.added_modules = (

@@ -12,6 +12,7 @@ def main():
     parser.add_argument("profile", type=Path)
     parser.add_argument("output", type=Path)
     parser.add_argument("reports", nargs="+", type=Path)
+    parser.add_argument("--dictionary-membership", action="store_true")
     args = parser.parse_args()
     profile = json.loads(gzip.decompress(args.profile.read_bytes()))
     seen, owners = set(), set()
@@ -51,7 +52,7 @@ def main():
         keep = mask(whole | unseen_in_both) | (broad & ~mask(observed))
         tables[owner] = [format(keep, "x"), {key: format(mask(tests), "x") for key, tests in sorted(keys.items())}]
 
-    profile["configuration_keys"] = tables
+    profile["dictionary_membership" if args.dictionary_membership else "configuration_keys"] = tables
     with (
         args.output.open("wb") as target,
         gzip.GzipFile(filename="", fileobj=target, mode="wb", mtime=0) as output,

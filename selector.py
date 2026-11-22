@@ -392,7 +392,7 @@ def class_updates(before, after, removed, added, enum_options=None, schema_keys=
     return earlier.keys()
 
 
-def configuration_keys(before, after):
+def configuration_keys(before, after, membership_observed=False):
     if isinstance(before, ast.Set) and isinstance(after, ast.Set):
         values = [node.elts for node in (before, after)]
         if all(isinstance(item, ast.Constant) and type(item.value) is str for items in values for item in items):
@@ -402,16 +402,25 @@ def configuration_keys(before, after):
         if not all(isinstance(key, ast.Constant) and type(key.value) is str for node in (before, after) for key in node.keys):
             return None
         old, new = ([key.value for key in node.keys] for node in (before, after))
-        if old != new or len(old) != len(set(old)):
+        if len(old) != len(set(old)) or len(new) != len(set(new)):
+            return None
+        if old != new and not membership_observed:
+            return None
+        old_nodes = dict(zip(old, before.values))
+        new_nodes = dict(zip(new, after.values))
+        shared = old_nodes.keys() & new_nodes.keys()
+        if [key for key in old if key in shared] != [key for key in new if key in shared]:
             return None
         try:
-            if literal_shape(ast.literal_eval(before)) != literal_shape(ast.literal_eval(after)):
+            old_shapes, new_shapes = ({
+                key: literal_shape(ast.literal_eval(node)) for key, node in values.items()
+            } for values in (old_nodes, new_nodes))
+            if any(old_shapes[key] != new_shapes[key] for key in shared):
                 return None
         except (TypeError, ValueError, OverflowError):
             return None
-        return {
-            key for key, a, b in zip(old, before.values, after.values)
-            if ast.dump(a) != ast.dump(b)
+        return (old_nodes.keys() ^ new_nodes.keys()) | {
+            key for key in shared if ast.dump(old_nodes[key]) != ast.dump(new_nodes[key])
         }
     return None
 
@@ -470,11 +479,21 @@ class Selector:
             return None
         owner, field = next(iter(before))
         module = path.removesuffix(".py").replace("/", ".")
-        evidence = self.semantics.configuration_keys.get(f"{module}:{owner}:{field}")
+        old_assignment, new_assignment = before[(owner, field)], after[(owner, field)]
+        old_value, new_value = old_assignment.value, new_assignment.value
+        membership_changed = (
+            isinstance(old_value, ast.Dict) and isinstance(new_value, ast.Dict)
+            and {ast.dump(key) if key else None for key in old_value.keys}
+            != {ast.dump(key) if key else None for key in new_value.keys}
+        )
+        table = (
+            getattr(self.semantics, "dictionary_membership", {})
+            if membership_changed else self.semantics.configuration_keys
+        )
+        evidence = table.get(f"{module}:{owner}:{field}")
         if evidence is None:
             return None
-        old_assignment, new_assignment = before[(owner, field)], after[(owner, field)]
-        keys = configuration_keys(old_assignment.value, new_assignment.value)
+        keys = configuration_keys(old_value, new_value, membership_changed)
         if keys is None or without_values(old.tree, [old_assignment]) != without_values(new.tree, [new_assignment]):
             return None
         whole, lookup = evidence

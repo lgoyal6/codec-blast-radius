@@ -31,3 +31,14 @@ class ContainerConfigTest(unittest.TestCase):
         self.assertEqual(configuration_keys(parse("{'a': 1, 'b': 2}"), parse("{'a': 3, 'b': 2}")), {"a"})
         self.assertIsNone(configuration_keys(parse("{'a': 1}"), parse("{'b': 1}")))
         self.assertIsNone(configuration_keys(parse("{'a'}"), parse("{'a', value}")))
+
+    def test_key_set_changes_require_dictionary_membership_observations(self):
+        def parse(expression):
+            return ast.parse(expression, mode="eval").body
+
+        before = parse("{'a': 1, 'b': 2, 'old': 3}")
+        after = parse("{'a': 1, 'b': 4, 'new': 5}")
+        self.assertIsNone(configuration_keys(before, after))
+        self.assertEqual(configuration_keys(before, after, True), {"b", "new", "old"})
+        for unsafe in ("{'b': 2, 'a': 1}", "{'a': 1, 'b': x}", "{'a': 1, 'a': 6}"):
+            self.assertIsNone(configuration_keys(before, parse(unsafe), True))
