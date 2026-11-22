@@ -97,7 +97,7 @@ BLAST_IMPORTS=1 BLAST_PROFILE=/imports/stress.json python -c 'import profile_imp
 
 Add `--import-reports /imports/*.json` to the semantic profile compiler command.
 
-For collection-time imports, run two separate collection-only traces from the pinned checkout. The compiler retains tests owned by each observed importing file and its dependents, unions existing runtime coverage, and keeps full selection for any unattributed collection request. The selector only narrows imports from modules initialized before collection in both baseline traces.
+For collection-time imports, run two separate collection-only traces from the pinned checkout. The compiler retains tests owned by each observed importing file and its dependents, unions existing runtime coverage, and keeps full selection for any unattributed collection request. The selector only narrows imports from modules initialized before collection in both baseline traces. Type-ignore directives must preserve their tags and their positions among unchanged lines.
 
 ```sh
 python "$ENTRY/trace/profile_collection_imports.py" /imports/collection-forward.json "$KIT/sample/tests.json"

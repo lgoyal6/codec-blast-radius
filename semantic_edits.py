@@ -1,6 +1,7 @@
 """Recognize source changes covered by the baseline semantic profile."""
 
 import ast
+from bisect import bisect_left
 import operator
 
 EQUALITY = {
@@ -240,7 +241,14 @@ def only_preloaded_imports(old, new, removed, added, stable_modules):
             if not stable:
                 return None
             count += 1
-        return ast.dump(ast.Module(body=body, type_ignores=tree.type_ignores)), count
+        if any(ignore.lineno in lines for ignore in tree.type_ignores):
+            return None
+        edited = sorted(lines)
+        unchanged_directives = tuple(
+            (ignore.lineno - bisect_left(edited, ignore.lineno), ignore.tag)
+            for ignore in tree.type_ignores
+        )
+        return ast.dump(ast.Module(body=body, type_ignores=[])), count, unchanged_directives
 
     before = stripped(old.tree, removed)
     after = stripped(new.tree, added)
@@ -248,6 +256,7 @@ def only_preloaded_imports(old, new, removed, added, stable_modules):
         before is not None
         and after is not None
         and before[0] == after[0]
+        and before[2] == after[2]
         and before[1] + after[1] > 0
     )
 

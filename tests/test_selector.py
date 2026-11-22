@@ -214,6 +214,20 @@ class SemanticEvidenceTest(unittest.TestCase):
         new = SimpleNamespace(tree=ast.parse("def f(a=2):\n    return lambda: a\n"))
         self.assertTrue(default_edit(old, new, {1}, {1})[3])
 
+    def test_import_directives_may_shift_with_unchanged_lines(self):
+        before = "# header\nvalue = 1  # type: ignore[assignment]\n"
+        old = SimpleNamespace(tree=ast.parse(before, type_comments=True))
+        moved = "# type: ignore[assignment]\nvalue = 1\nimport math\n"
+        for after, removed, added, expected in (
+            ("import math\n" + before, set(), {1}, True),
+            ("import math\n" + before.replace("assignment", "misc"), {2}, {1, 3}, False),
+            (moved, {1, 2}, {1, 2, 3}, False),
+            ("import math  # type: ignore[assignment]\n" + before, set(), {1}, False),
+        ):
+            with self.subTest(after=after):
+                new = SimpleNamespace(tree=ast.parse(after, type_comments=True))
+                self.assertEqual(only_preloaded_imports(old, new, removed, added, {"math"}), expected)
+
     def test_preloaded_import_guard_rejects_new_dependencies_and_body_edits(self):
         old = SimpleNamespace(tree=ast.parse("x = 1"))
         modules = {"math"}
