@@ -107,6 +107,8 @@ python "$ENTRY/trace/profile_collection_imports.py" /imports/collection-reverse.
 Pass the two collection files with `--collection-reports` and list the runtime reports separately under `--import-reports`.
 
 
+The selector parses the full file and indexes the syntax around the edited lines first. Class-level fallback rebuilds the complete index when it needs definitions elsewhere in the file.
+
 For compatible one-line comparison edits, the selector can verify a literal or operator change from the original source byte ranges. It uses the whole syntax tree whenever that exact check cannot establish the edit.
 
 ### Function defaults

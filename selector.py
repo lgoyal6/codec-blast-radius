@@ -75,10 +75,10 @@ class Function:
         return range(self.start, self.end + 1)
 
 
-class SourceShape(ast.NodeVisitor):
-    def __init__(self, source, filename):
+class SourceShape:
+    def __init__(self, source, filename, tree=None):
         self.source = source
-        self.tree = ast.parse(source, filename=filename, type_comments=True)
+        self.tree = tree if tree is not None else ast.parse(source, filename=filename, type_comments=True)
         self.parents = []
         self.functions = []
         self.assignments = {}
@@ -109,11 +109,24 @@ class SourceShape(ast.NodeVisitor):
         return start + start_column, start + end_column
 
     def visit(self, node):
-        if not node._fields or type(node) in (ast.Name, ast.Constant):
-            return None
-        return super().visit(node)
+        kind = type(node)
+        if not node._fields or kind in (ast.Name, ast.Constant):
+            return
+        if kind is ast.ClassDef:
+            return self.visit_class(node)
+        if kind in FUNCTIONS:
+            return self.visit_function(node)
+        if kind is ast.Lambda:
+            return self.visit_lambda(node)
+        if kind in COLLECTION_IMPORTS:
+            self.imports.update(range(node.lineno, node.end_lineno + 1))
+        if kind in EXPRESSION_ROOTS:
+            self.expressions.append(range(node.lineno, node.end_lineno + 1))
+        if kind is ast.Compare:
+            self.comparisons.append(node)
+        self.visit_children(node)
 
-    def visit_ClassDef(self, node):
+    def visit_class(self, node):
         owner = ".".join([*self.parents, node.name])
         for statement in node.body:
             if isinstance(statement, ast.Assign) and len(statement.targets) == 1:
@@ -130,18 +143,16 @@ class SourceShape(ast.NodeVisitor):
                     self.assignments[key] = statement
         self.record_header(node)
         self.parents.append(node.name)
-        self.generic_visit(node)
+        self.visit_children(node)
         self.parents.pop()
 
-    def visit_FunctionDef(self, node):
+    def visit_function(self, node):
         name = ".".join([*self.parents, node.name])
         start = self.record_header(node)
         self.functions.append(Function(name, start, node.end_lineno))
         self.parents.append(node.name)
-        self.generic_visit(node)
+        self.visit_children(node)
         self.parents.pop()
-
-    visit_AsyncFunctionDef = visit_FunctionDef
 
     def record_header(self, node):
         first = node.body[0]
@@ -152,20 +163,21 @@ class SourceShape(ast.NodeVisitor):
             self.definition_lines.update(range(first.lineno, first.end_lineno + 1))
         return body_start
 
-    def visit_Lambda(self, node):
+    def visit_lambda(self, node):
         first = max(node.lineno + 1, node.body.lineno)
         if first <= node.body.end_lineno:
             self.lambda_bodies.append((range(first, node.body.end_lineno + 1), node))
-        self.generic_visit(node)
+        self.visit_children(node)
 
-    def generic_visit(self, node):
-        if isinstance(node, COLLECTION_IMPORTS):
-            self.imports.update(range(node.lineno, node.end_lineno + 1))
-        if isinstance(node, EXPRESSION_ROOTS):
-            self.expressions.append(range(node.lineno, node.end_lineno + 1))
-        if isinstance(node, ast.Compare):
-            self.comparisons.append(node)
-        super().generic_visit(node)
+    def visit_children(self, node):
+        for field in node._fields:
+            value = getattr(node, field, None)
+            if type(value) is list:
+                for item in value:
+                    if isinstance(item, ast.AST):
+                        self.visit(item)
+            elif isinstance(value, ast.AST):
+                self.visit(value)
 
     def scopes_at(self, lines):
         matches = {}
@@ -175,6 +187,26 @@ class SourceShape(ast.NodeVisitor):
                 return {}
             matches.setdefault(match, set()).add(line)
         return matches
+
+
+
+class LineSourceShape(SourceShape):
+    def __init__(self, source, filename, lines, tree=None):
+        self.first = min(lines)
+        self.last = max(lines)
+        super().__init__(source, filename, tree=tree)
+
+    def visit(self, node):
+        start = getattr(node, "lineno", None)
+        if start is not None:
+            end = getattr(node, "end_lineno", None)
+            if end is not None and end < self.first:
+                return None
+            if start > self.last:
+                decorators = getattr(node, "decorator_list", ())
+                if not decorators or decorators[0].lineno > self.last:
+                    return None
+        return super().visit(node)
 
 
 def comment_only(before, after, old_lines, new_lines):
@@ -285,8 +317,12 @@ class Selector:
         return (self.source / path).read_bytes()
 
     @cache
+    def source_tree(self, path):
+        return ast.parse(self.load(path), filename=path, type_comments=True)
+
+    @cache
     def shape(self, path):
-        return SourceShape(self.load(path), path)
+        return SourceShape(self.load(path), path, tree=self.source_tree(path))
 
     def class_candidates(self, path, file, old, new, removed, added):
         parts = path.split("/")
@@ -369,7 +405,12 @@ class Selector:
         if not path.endswith(".py"):
             return file.readers or self.baseline.all, "file-readers"
 
-        old, new = self.shape(path), SourceShape(after, path)
+        old_lines = removed | anchors
+        old = (
+            LineSourceShape(before, path, old_lines, self.source_tree(path))
+            if old_lines else self.shape(path)
+        )
+        new = LineSourceShape(after, path, added) if added else SourceShape(after, path)
         compile(new.tree, path, "exec", dont_inherit=True)
         if comment_only(before, after, removed, added) and ast.dump(old.tree) == ast.dump(new.tree):
             return file.readers, "comment-readers"
@@ -387,7 +428,7 @@ class Selector:
                     return int(lazy, 16), "observed-lazy-import"
             return self.baseline.all, "import-change"
 
-        old_scopes = old.scopes_at(removed | anchors)
+        old_scopes = old.scopes_at(old_lines)
         new_scopes = new.scopes_at(added) if added else old_scopes
         within_body = (
             old_scopes
@@ -433,7 +474,8 @@ class Selector:
 
         if path.startswith("tests/") and file.owns and not path.endswith("/__init__.py"):
             return file.owns | file.imports | file.executed | file.readers, "test-collection"
-        if self.semantics is not None and path.startswith("sqlglot/"):
+        semantic_source = self.semantics is not None and path.startswith("sqlglot/")
+        if semantic_source:
             default = default_edit(old, new, removed, added)
             if default is not None:
                 name, body, changed, may_escape = default
@@ -450,6 +492,11 @@ class Selector:
                                 return users | file.readers, "observed-default-readers"
                         references = self.baseline.references.get(name, 0)
                         return called | references | file.readers, "observed-default"
+        if isinstance(old, LineSourceShape):
+            old = self.shape(path)
+        if isinstance(new, LineSourceShape):
+            new = SourceShape(after, path, tree=new.tree)
+        if semantic_source:
             observed = self.observed_class_candidates(path, file, old, new, removed, added, single_file)
             if observed is not None:
                 return observed, "observed-class"

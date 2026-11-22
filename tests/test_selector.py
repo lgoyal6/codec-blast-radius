@@ -6,7 +6,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from patches import parse_patch
-from selector import FileMap, Selector, SourceShape, schedule
+from selector import FileMap, LineSourceShape, Selector, SourceShape, schedule
 from semantics import Semantics, same_result
 from semantic_edits import compare_edit, copy_toggle, default_edit, only_preloaded_imports, operator_only
 
@@ -58,6 +58,16 @@ class SelectorTest(unittest.TestCase):
         self.baseline = SimpleNamespace(
             all=15, files={self.path: FileMap(coverage, set(), 8, 0, 0, 7)}, owners={}
         )
+
+    def test_line_shape_keeps_decorators_and_relevant_expressions(self):
+        text = b"# type: ignore[assignment]\n@decorator\ndef f(x):\n    return x == 2\n"
+        full = SourceShape(text, self.path)
+        header = LineSourceShape(text, self.path, {2})
+        body = LineSourceShape(text, self.path, {4}, full.tree)
+        self.assertIn(2, header.definition_lines)
+        self.assertEqual(full.scopes_at({4}), body.scopes_at({4}))
+        self.assertEqual(full.expressions, body.expressions)
+        self.assertIs(full.comparisons[0], body.comparisons[0])
 
     def test_multiline_boolean_covers_the_earlier_operand(self):
         patch = patch_for(self.path, self.source, self.source.replace("and b", "or b"))
