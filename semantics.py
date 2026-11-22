@@ -5,7 +5,7 @@ import gzip
 import json
 from functools import cache
 
-from semantic_edits import COMPARISONS, ORDERING, UNCHANGED, compare_edit
+from semantic_edits import COMPARISONS, ORDERING, UNCHANGED, compare_edit, copy_toggle
 
 
 def primitive(encoded):
@@ -180,6 +180,7 @@ class Semantics:
         self.attributes = profile["attributes"]
         self.enum_fields = profile.get("enum_fields", {})
         self.registry = profile["registry"]
+        self.fresh_copies = profile.get("fresh_copies", {})
         self.direct = profile["direct"]
         self.schemas = profile["schemas"]
         self.schema_validations = profile.get("schema_validations", {})
@@ -221,6 +222,16 @@ class Semantics:
             keep |= int(fields.get(parameter, "0"), 16)
         return keep
 
+
+    def fresh_copy_users(self, path, old, new, removed, added):
+        sites = self.fresh_copies.get(path)
+        if not sites:
+            return 0
+        edit = copy_toggle(old, new, removed, added)
+        if edit is None:
+            return 0
+        line, column = edit
+        return int(sites.get(f"{line}:{column}", "0"), 16)
 
     def equivalent(self, path, lines, old, new, removed, added):
         edit = compare_edit(old, new, removed, added)

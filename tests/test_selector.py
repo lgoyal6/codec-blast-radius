@@ -8,7 +8,7 @@ from types import SimpleNamespace
 from patches import parse_patch
 from selector import FileMap, Selector, SourceShape, schedule
 from semantics import Semantics, same_result
-from semantic_edits import compare_edit, default_edit, only_preloaded_imports, operator_only
+from semantic_edits import compare_edit, copy_toggle, default_edit, only_preloaded_imports, operator_only
 
 
 def patch_for(path, old, new):
@@ -167,6 +167,32 @@ class SemanticEvidenceTest(unittest.TestCase):
         new = SourceShape(b"# coding: latin-1\nif (value) == None:\n    result = 1\n", "sqlglot/test.py")
         self.assertFalse(operator_only(old, new, old.comparisons[0], new.comparisons[0], "Is", "Eq"))
         self.assertEqual(compare_edit(old, new, {2}, {2})[:4], (2, 3, "Is", "Eq"))
+
+    def test_fresh_alias_copy_toggle_preserves_other_syntax(self):
+        def shape(source):
+            return SourceShape(source.encode(), "sqlglot/example.py")
+
+        original = shape('exp.alias_(exp.table_(name), alias="a")')
+        changed = shape('exp.alias_(exp.table_(name), alias="a", copy=False)')
+        shared = shape('exp.alias_(existing, alias="a", copy=False)')
+        mixed = shape('exp.alias_(exp.table_(name), alias="b", copy=False)')
+        self.assertEqual(copy_toggle(original, changed, {1}, {1}), (1, 0))
+        self.assertIsNone(copy_toggle(original, shared, {1}, {1}))
+        self.assertIsNone(copy_toggle(original, mixed, {1}, {1}))
+
+    def test_fresh_copy_selection_keeps_unknowns_and_source_readers(self):
+        path = "sqlglot/example.py"
+        before = 'def f(name):\n    return exp.alias_(exp.column(name), alias="alias")\n'
+        after = before.replace('alias="alias"', 'alias="alias", copy=False')
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / path).parent.mkdir()
+            (root / path).write_text(before)
+            baseline = SimpleNamespace(all=7, files={path: FileMap({2: 3}, set(), 0, 4, 0, 3)})
+            semantics = Semantics.__new__(Semantics)
+            semantics.fresh_copies = {path: {"2:11": "1"}}
+            selector = Selector(baseline, root, semantics=semantics)
+            self.assertEqual(selector.select(patch_for(path, before, after)), (6, {"observed-fresh-copy"}))
 
     def test_default_edit_identifies_bound_parameters(self):
         old = SimpleNamespace(tree=ast.parse("def f(a, /, b=2, *, c=3):\n    return b + c\n"))

@@ -122,3 +122,15 @@ BLAST_DEFAULTS=1 BLAST_PROFILE=/defaults/stress.json python -c 'import profile_d
 ```
 
 Add `--default-reports /defaults/*.json` to the semantic profile compiler command.
+
+### Copies of fresh expressions
+
+The copy trace observes direct calls to `exp.alias_` on results from the original `exp.table_` and `exp.column` builders. A test can omit an isolated literal `copy` toggle when its baseline calls pass only scalar constructor arguments and produce detached expression trees with ordinary copy implementations. Missing observations and indirect or shared inputs keep coverage-based selection.
+
+From the pinned checkout, use a separate output directory and the same test environment as the other semantic traces.
+
+```sh
+BLAST_COPIES=1 BLAST_PROFILE=/copies/main.json python -c 'import profile_copies; raise SystemExit(profile_copies.main())' /copies/main.json
+```
+
+Add `--copy-reports /copies/*.json` to the semantic profile compiler command.

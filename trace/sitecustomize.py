@@ -5,7 +5,9 @@ import os
 from pathlib import Path
 
 if output := os.environ.get("BLAST_PROFILE"):
-    if os.environ.get("BLAST_DEFAULTS"):
+    if os.environ.get("BLAST_COPIES"):
+        from profile_copies import start
+    elif os.environ.get("BLAST_DEFAULTS"):
         from profile_defaults import start
     elif os.environ.get("BLAST_IMPORTS"):
         from profile_imports import start

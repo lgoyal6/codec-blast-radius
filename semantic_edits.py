@@ -250,3 +250,61 @@ def only_preloaded_imports(old, new, removed, added, stable_modules):
         and before[0] == after[0]
         and before[1] + after[1] > 0
     )
+
+
+def expression_call(node, names):
+    return (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Attribute)
+        and isinstance(node.func.value, ast.Name)
+        and node.func.value.id == "exp"
+        and node.func.attr in names
+        and not any(isinstance(arg, ast.Starred) for arg in node.args)
+        and all(kw.arg is not None for kw in node.keywords)
+    )
+
+
+def fresh_alias(node):
+    if (
+        expression_call(node, {"alias_"})
+        and node.args
+        and expression_call(node.args[0], {"column", "table_"})
+    ):
+        return node.args[0]
+    return None
+
+
+def copy_toggle(old, new, removed, added):
+    if not removed or not added:
+        return None
+    matches = []
+    for source, lines in ((old, removed), (new, added)):
+        low, high = min(lines), max(lines)
+        aliases = [
+            node for node in ast.walk(source.tree)
+            if fresh_alias(node) is not None and node.lineno <= low and high <= node.end_lineno
+        ]
+        if len(aliases) != 1:
+            return None
+        alias = aliases[0]
+        explicit = [kw.value for kw in alias.keywords if kw.arg == "copy"]
+        if explicit:
+            value, = explicit
+            if not isinstance(value, ast.Constant) or type(value.value) is not bool:
+                return None
+            enabled = value.value
+        else:
+            enabled = True
+        matches.append((source, alias, enabled))
+    (_, first, before), (_, _, after) = matches
+    if before == after:
+        return None
+    normalized = []
+    for source, alias, _ in matches:
+        saved = alias.keywords
+        try:
+            alias.keywords = [kw for kw in saved if kw.arg != "copy"]
+            normalized.append(ast.dump(source.tree))
+        finally:
+            alias.keywords = saved
+    return (first.lineno, first.col_offset) if normalized[0] == normalized[1] else None

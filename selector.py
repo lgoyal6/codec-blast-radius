@@ -416,6 +416,10 @@ class Selector:
                 hits |= scoped_hits
             else:
                 if self.semantics is not None and path.startswith("sqlglot/"):
+                    if single_file:
+                        owned = self.semantics.fresh_copy_users(path, old, new, removed, added)
+                        if owned & hits:
+                            return (hits & ~owned) | file.readers, "observed-fresh-copy"
                     same = self.semantics.equivalent(path, file.lines, old, new, removed, added)
                     if same & hits:
                         return (hits & ~same) | file.readers, "observed-comparison"

@@ -14,6 +14,7 @@ from selector import Baseline, REVISION, union
 from build_schema import build_schema
 from build_imports import import_profile
 from build_defaults import default_profile
+from build_copies import copy_profile
 from build_enum_fields import enum_field_options
 
 COLLECTION = "@collection"
@@ -131,7 +132,7 @@ def expression_schemas(source, baseline, reads, initialization, mask):
 
 def build(
     source, coverage, reports, output, schema_reports=(), import_reports=(),
-    default_reports=(), collection_reports=(),
+    default_reports=(), collection_reports=(), copy_reports=(),
 ):
     revision = subprocess.check_output(
         ["git", "-C", source, "rev-parse", "HEAD"], text=True
@@ -175,6 +176,7 @@ def build(
             for site, tests in sorted(reads.items())
             if COLLECTION not in tests
         },
+        "fresh_copies": copy_profile(copy_reports, baseline),
         "registry": {
             site: format(mask(tests), "x")
             for site, tests in sorted(calls.items())
@@ -213,10 +215,11 @@ def main():
     parser.add_argument("--import-reports", nargs="+", type=Path, default=())
     parser.add_argument("--default-reports", nargs="+", type=Path, default=())
     parser.add_argument("--collection-reports", nargs="+", type=Path, default=())
+    parser.add_argument("--copy-reports", nargs="+", type=Path, default=())
     args = parser.parse_args()
     build(
         args.source, args.coverage, args.reports, args.output, args.schema_reports,
-        args.import_reports, args.default_reports, args.collection_reports,
+        args.import_reports, args.default_reports, args.collection_reports, args.copy_reports,
     )
 
 
