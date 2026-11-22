@@ -5,7 +5,9 @@ import gzip
 import json
 from functools import cache
 
-from semantic_edits import COMPARISONS, ORDERING, UNCHANGED, compare_edit, copy_toggle
+from semantic_edits import (
+    COMPARISONS, ORDERING, UNCHANGED, argument_defaults, compare_edit, copy_toggle,
+)
 
 
 def primitive(encoded):
@@ -170,6 +172,82 @@ def call_values(node):
     return node.args + [keyword.value for keyword in node.keywords]
 
 
+def factory_calls(tree, name):
+    return sorted(
+        (
+            node for node in ast.walk(tree)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == name
+        ),
+        key=lambda node: (node.lineno, node.col_offset),
+    )
+
+
+def effective_defaults(arguments, call, defaults):
+    positional = arguments.posonlyargs + arguments.args
+    if any(arg.arg in defaults for arg in positional[:len(call.args)]):
+        return None
+    effective = dict(defaults)
+    for keyword in call.keywords:
+        if keyword.arg is None:
+            return None
+        if keyword.arg in effective:
+            if (
+                not isinstance(keyword.value, ast.Constant)
+                or type(keyword.value.value) is not type(defaults[keyword.arg])
+            ):
+                return None
+            effective[keyword.arg] = keyword.value.value
+    return effective
+
+
+def composed_factory_calls(before, after, name, known_parameters):
+    candidates = [
+        [n for n in tree.body if isinstance(n, ast.FunctionDef) and n.name == name]
+        for tree in (before, after)
+    ]
+    if any(len(nodes) != 1 for nodes in candidates):
+        return None
+    (earlier,), (later,) = candidates
+    old_defaults = argument_defaults(earlier.args)
+    new_defaults = argument_defaults(later.args)
+    if old_defaults.keys() != new_defaults.keys():
+        return None
+    changed = {key for key, value in old_defaults.items() if new_defaults[key] != value}
+    if (
+        not changed or not changed <= known_parameters
+        or any(arg.arg in changed for arg in earlier.args.posonlyargs)
+        or any(type(value) is not type(new_defaults[key]) for key, value in old_defaults.items())
+    ):
+        return None
+    calls_before = factory_calls(before, name)
+    calls_after = factory_calls(after, name)
+    if not calls_before or len(calls_before) != len(calls_after):
+        return None
+    updates = []
+    for old_call, new_call in zip(calls_before, calls_after):
+        old_values = effective_defaults(earlier.args, old_call, {key: old_defaults[key] for key in changed})
+        new_values = effective_defaults(later.args, new_call, {key: new_defaults[key] for key in changed})
+        if old_values is None or new_values is None:
+            return None
+        updates.append((old_call, old_values != new_values))
+    old_kw = [call.keywords for call in calls_before]
+    new_kw = [call.keywords for call in calls_after]
+    original_defaults, original_kw_defaults = later.args.defaults, later.args.kw_defaults
+    try:
+        later.args.defaults, later.args.kw_defaults = earlier.args.defaults, earlier.args.kw_defaults
+        for call in calls_before + calls_after:
+            call.keywords = [kw for kw in call.keywords if kw.arg not in changed]
+        if ast.dump(before) == ast.dump(after):
+            return updates
+    finally:
+        later.args.defaults, later.args.kw_defaults = original_defaults, original_kw_defaults
+        for call, keywords in zip(calls_before + calls_after, old_kw + new_kw):
+            call.keywords = keywords
+    return None
+
+
 class Semantics:
     def __init__(self, path, revision, ids):
         profile = json.loads(gzip.decompress(path.read_bytes()))
@@ -211,6 +289,28 @@ class Semantics:
         for parameter in changed:
             keep |= int(fields[parameter], 16)
         return keep
+
+    def composed_factory_users(self, path, old, new, executed):
+        for qualified, (readers, fields) in self.factory_defaults.items():
+            file, name = qualified.rsplit(":", 1)
+            if file != path:
+                continue
+            calls = composed_factory_calls(old.tree, new.tree, name, fields.keys())
+            if calls is None:
+                continue
+            hits = (
+                (executed & ~(self.seen & self.default_seen))
+                | int(readers, 16)
+                | self.factory_readers
+            )
+            for call, changed in calls:
+                mask = self.registry.get(f"{path}:{call.lineno}:{call.col_offset}")
+                if mask is None:
+                    return None
+                if changed:
+                    hits |= int(mask, 16)
+            return hits
+        return None
 
     def default_users(self, path, name, changed, called):
         evidence = self.default_functions.get(f"{path}:{name}")

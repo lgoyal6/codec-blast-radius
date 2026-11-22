@@ -508,6 +508,10 @@ class Selector:
                                 return users | file.readers, "observed-default-readers"
                         references = self.baseline.references.get(name, 0)
                         return called | references | file.readers, "observed-default"
+        if semantic_source and single_file and path.startswith("sqlglot/parsers/"):
+            composed = self.semantics.composed_factory_users(path, old, new, file.executed)
+            if composed is not None:
+                return composed | file.readers, "observed-composed-factory"
         if isinstance(old, LineSourceShape):
             old = self.shape(path)
         if isinstance(new, LineSourceShape):

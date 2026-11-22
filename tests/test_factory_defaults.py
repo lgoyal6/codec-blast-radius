@@ -7,7 +7,7 @@ from types import SimpleNamespace
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "trace"))
 
 from build_factory_defaults import factory_default_profile
-from semantics import Semantics
+from semantics import Semantics, composed_factory_calls
 
 
 class FactoryDefaultsTest(unittest.TestCase):
@@ -63,3 +63,22 @@ class Example:
         profile.factory_defaults = {f"{self.path}:_factory": ["2", {"flag": "1"}]}
         self.assertEqual(profile.factory_default_users(self.path, "_factory", ("flag",), 31), 31)
         self.assertIsNone(profile.factory_default_users(self.path, "_factory", ("other",), 31))
+
+    def test_compensated_default_does_not_select_unchanged_callbacks(self):
+        before = self.source.replace('_factory("one", True)', '_factory("one")')
+        after = before.replace("flag=False", "flag=True").replace(
+            '_factory("one")', '_factory("one", flag=False)'
+        )
+        calls = composed_factory_calls(ast.parse(before), ast.parse(after), "_factory", {"flag"})
+        self.assertEqual([changed for _, changed in calls], [False, True])
+
+    def test_nonliteral_override_and_registry_key_change_require_fallback(self):
+        before = self.source.replace('_factory("one", True)', '_factory("one", flag=True)')
+        default = before.replace("flag=False", "flag=True")
+        for after in (
+            default.replace('_factory("one", flag=True)', '_factory("one", flag=other)'),
+            default.replace('"implicit":', '"new_key":'),
+        ):
+            self.assertIsNone(
+                composed_factory_calls(ast.parse(before), ast.parse(after), "_factory", {"flag"})
+            )
